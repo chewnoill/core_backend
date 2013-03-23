@@ -1,0 +1,58 @@
+<html>
+<head>
+	<script type='text/javascript'
+			src='js/jquery-1.9.1.min.js' charset="utf-8"></script>
+	<script type="text/javascript"
+			src='js/debugui.js'></script>
+	<link rel="stylesheet" type="text/css" href="css/debugui.css" media="screen" />
+</head>
+<body>
+<table>
+	<tr><td>{</td></tr>
+	<tr height='30px'>
+		<td width='50px'><div class='required'>username:</div> </td>
+		<td><input id='username' type='text'></td>
+		<td>,</td>
+	</tr>
+	<tr height='30px'>
+		<td width='50px'><div class='required'>password:</div></td>
+		<td><input id='password' type='password'></td>
+		<td>,</td>
+	</tr>
+	<tr>
+	</tr>
+		<td width='50px'><div  class='required'>type:</div></td><td width='50%'>
+			<select id='action_type'>
+	  			<option value="get_status">get_status</option>
+	  			<option value="get_notes">get_notes</option>
+	  			<option value="list_events">list_events</option>
+	  			<option value="set_status">set_status</option>
+	  			<option value="set_notes">set_notes</option>
+	  			<option value="find_person">find_person</option>
+	  		</select>
+		</td>
+		<td>,</td>
+	</tr>
+	<tr><td>}</td></tr>
+	<tr><td>
+		<input type='button' id='submit' value='submit'>
+	</td><td>
+		<div id='loading' class='hiddenLoader'><img src="img/loading.gif"></div>
+	</td></tr>
+</table>
+<table>
+	
+	<tr><td>output</td></tr>
+	<tr><td colspan=3>
+		<div id="output" class="output"></div>
+	</td></tr>
+</table>
+
+
+<br>
+
+
+</body>
+
+</html>
+

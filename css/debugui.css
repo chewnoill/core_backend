@@ -1,0 +1,18 @@
+pre {
+	outline: 1px solid #ccc; 
+	padding: 5px; 
+	margin: 5px;
+	width: 600px}
+
+.output { word-wrap: break-word; width: 50%; }
+.string {
+	color: green; 
+	max-width:500px;}
+.number { color: darkorange; }
+.boolean { color: blue; }
+.null { color: magenta; }
+.key { color: red; }
+.required { color: red; font-weight:bold;}
+
+.hideLoader {visibility:hidden;}
+.showLoader {visibility:visible;}
