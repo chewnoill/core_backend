@@ -4,7 +4,7 @@ pre {
 	margin: 5px;
 	width: 600px}
 
-.output { word-wrap: break-word; width: 50%; }
+.json { word-wrap: break-word; width: 50%; }
 .string {
 	color: green; 
 	max-width:500px;}

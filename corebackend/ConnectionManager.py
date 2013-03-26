@@ -57,8 +57,6 @@ class ConnectionManager:
         ret = {}
         ret['content']=response.content
         ret['status']=response.status_code
-        ret['saved-cookies']=str(self.cookies)
-        ret['sent-cookies']=str(response.header_msg.getheaders('set-cookie'))
         if self.redirect:
             ret['redirect']=self.redirect
         return ret

@@ -17,7 +17,7 @@ handlers:
   upload: debug.html
   secure: always
 - url: /handler.html
-  script: corebackend.main.app
+  script: corebackend.Main.app
   secure: always
   
 libraries:

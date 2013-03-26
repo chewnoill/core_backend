@@ -7,20 +7,9 @@
 	<link rel="stylesheet" type="text/css" href="css/debugui.css" media="screen" />
 </head>
 <body>
-<table>
-	<tr><td>{</td></tr>
-	<tr height='30px'>
-		<td width='50px'><div class='required'>username:</div> </td>
-		<td><input id='username' type='text'></td>
-		<td>,</td>
-	</tr>
-	<tr height='30px'>
-		<td width='50px'><div class='required'>password:</div></td>
-		<td><input id='password' type='password'></td>
-		<td>,</td>
-	</tr>
+{
+<table id="primary">
 	<tr>
-	</tr>
 		<td width='50px'><div  class='required'>type:</div></td><td width='50%'>
 			<select id='action_type'>
 	  			<option value="get_status">get_status</option>
@@ -29,22 +18,39 @@
 	  			<option value="set_status">set_status</option>
 	  			<option value="set_notes">set_notes</option>
 	  			<option value="find_person">find_person</option>
+	  			<option value="get_menu">get_menu</option>
 	  		</select>
+	  		,
 		</td>
-		<td>,</td>
 	</tr>
-	<tr><td>}</td></tr>
-	<tr><td>
-		<input type='button' id='submit' value='submit'>
-	</td><td>
-		<div id='loading' class='hiddenLoader'><img src="img/loading.gif"></div>
-	</td></tr>
-</table>
-<table>
+	<tr height='30px'>
+		<td width='50px'><div class='required'>username:</div> </td>
+		<td><input id='username' type='text'>,</td>
+	</tr>
+	<tr height='30px'>
+		<td width='50px'><div class='required'>password:</div></td>
+		<td><input id='password' type='password'>,</td>
+
+	</tr>
 	
+</table>
+<table id="secondary">
+
+</table>
+<table id="tertiary">
+
+</table>
+}
+<table>
+	<tr><td><span class="required">bold red</span> is required</td></tr>
+	<tr><td><button id='submit'>submit</button></td></tr>
+	<tr><td>input</td></tr>
+	<tr><td colspan=3>
+		<div id="input" class="json"></div>
+	</td></tr>
 	<tr><td>output</td></tr>
 	<tr><td colspan=3>
-		<div id="output" class="output"></div>
+		<div id="output" class="json"></div>
 	</td></tr>
 </table>
 

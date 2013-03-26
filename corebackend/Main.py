@@ -5,7 +5,9 @@ Created on Mar 21, 2013
 '''
 import webapp2
 import json
-import corebackend.trax as trax
+import trax as trax
+import DataStore
+
 
 class MainPage(webapp2.RequestHandler):
     def get(self):
@@ -62,11 +64,14 @@ class MainPage(webapp2.RequestHandler):
                 error_msg['error']='bad input'
                 error = True
         else:
-            #return error
-            error_msg['code']=401
-            error_msg['detail']='username and password required'
-            error_msg['error']='unauthorized'
-            error = True
+            if 'type' in input and input['type']=='get_menu':
+                ret = getMenu_no_id()
+            else:
+                #return error
+                error_msg['code']=401
+                error_msg['detail']='username and password required'
+                error_msg['error']='unauthorized'
+                error = True
         
         if callback:
             self.response.out.write(callback+'(')
@@ -86,9 +91,67 @@ def getStatus(traxSession,data):
 def getNotes(traxSession,data):
     return traxSession.getNotes()
 def setStatus(traxSession,data):
-    'TODO'
+    ret = traxSession.postPathSave(data['path'],data['extra'])
+    return ret 
+
 def setNotes(traxSession,data):
     'TODO'
+def buildMenu(traxSession,data):
+    #This takes a long time, probably shouldn't do it very often
+    MenuObj = traxSession.buildMenu()
+    
+    #save results to GAE Datastore
+    ret = json.dumps(MenuObj)
+    DataStore.insertMenu('menu', ret)
+    
+    return ret
+    
+def getMenu(traxSession,data):
+    ret = DataStore.getMenu('menu')
+    
+    if not ret:
+        ret = buildMenu(traxSession,data)
+    return json.loads(ret)
+def getMenu_no_id():
+    ret = DataStore.getMenu('menu')
+    
+    if not ret:
+        ret = {'error':'no menu',
+               'code':404,
+               'detail': 'no menu found, must be rebuilt'}
+        return ret
+    else:
+        return json.loads(ret)
+def buildReversePathLookup():
+    menu = getMenu_no_id()
+    if 'error' in menu:
+        return menu
+    
+    else:
+        dontcare=['Save']
+        
+        for o in menu:
+            for p in menu[o]:
+                if p not in dontcare:
+                    DataStore.insertPath(arg1 = p,
+                                         arg2 = None,
+                                         path = json.dumps([o,p]))
+                    #print('itm: %s %s' % (p,[o,p]))
+                    for q in menu[o][p]:
+                        if q not in dontcare:
+                            tq = ''
+                            if q == 'extra':
+                                tq = menu[o][p][q].keys()[0]
+                            else:
+                                tq = q
+                            print (p,tq,json.dumps([o,p,tq]))
+                            DataStore.insertPath(arg1 = p,
+                                                 arg2 = tq,
+                                                 path = json.dumps([o,p,tq]))
+                            #print('\titm: %s %s' % (q,[o,p,q]))
+
+
+
 def notImplemented(traxSession,data):
     ret = {'detail': 'not implemented, try again later',
            'code': 404}
@@ -97,10 +160,12 @@ def notImplemented(traxSession,data):
 #dispatch dictionary
 types = {'get_status': getStatus,
          'get_notes': getNotes,
-         'set_status': notImplemented,
+         'set_status': setStatus,
          'set_notes': notImplemented,
          'list_events': notImplemented,
-         'find_person': notImplemented}
+         'find_person': notImplemented,
+         'build_menu':notImplemented,
+         'get_menu':getMenu}
          
 app = webapp2.WSGIApplication([('/handler.html', MainPage)],
                               debug=True)
