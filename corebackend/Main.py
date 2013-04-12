@@ -91,7 +91,20 @@ def getStatus(traxSession,data):
 def getNotes(traxSession,data):
     return traxSession.getNotes()
 def setStatus(traxSession,data):
-    ret = traxSession.postPathSave(data['path'],data['extra'])
+    extra = {}
+    path = []
+    if 'path' in data:
+        path = data['path']
+    else:
+        #no path, return error
+        ret = {'error':'no path',
+               'code':404,
+               'detail': 'no path recieved, malformed data'}
+        return ret
+    if 'extra' in data:
+        extra = data['extra']
+    
+    ret = traxSession.postPathSave(path,extra)
     return ret 
 
 def setNotes(traxSession,data):
@@ -153,7 +166,8 @@ def buildReversePathLookup():
 
 
 def notImplemented(traxSession,data):
-    ret = {'detail': 'not implemented, try again later',
+    ret = {'error': 'not found',
+           'detail': 'not implemented, try again later',
            'code': 404}
     return ret
     
