@@ -21,12 +21,15 @@ class MainPage(webapp2.RequestHandler):
         ret = error_msg = {'error':'an error has occurred!'}#default error message
         
         try:
-            input = json.loads(self.request.POST.items()[0][0])
+            
+            input = json.loads(self.request.body)
         except ValueError:
             error_msg['code']=400
             error_msg['message']='invalid input'
             error_msg['error']='bad input'
             error = True
+
+        
         if error:
             'do nothing'
         elif 'username' in input and 'password' in input:

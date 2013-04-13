@@ -247,32 +247,20 @@ function submit(){
 	$('#loading').addClass('showLoader');
 	$('#loading').removeClass('hideLoader');
 	
-	$.post('/handler.html',JSON.stringify(data),function(data){
-		$('#loading').addClass('hideLoader');
-		$('#loading').removeClass('showLoader');
-		data = JSON.parse(data);
-		data = JSON.stringify(data, undefined, 4);
-		$('#output').children().remove();
-		var json_stuff = $('<pre>');
-		var out = syntaxHighlight(data);
-		json_stuff[0].innerHTML = out;
-		$('#output').append(json_stuff);
-
-	})
-	.fail(function(){
-		$('#loading').addClass('hideLoader');
-		$('#loading').removeClass('showLoader');
-		$('#output').children().remove();
-		var data = {
-				'error':'an unexpected server error has occured'
-		}
-		data = JSON.parse(data);
-		data = JSON.stringify(data, undefined, 4);
-		var json_stuff = $('<pre>');
-		var out = syntaxHighlight(data);
-		json_stuff[0].innerHTML = out;
-		$('#output').append(json_stuff);
-	});
+	$.post('/handler.html',
+			JSON.stringify(data),
+			function(data){
+				$('#loading').addClass('hideLoader');
+				$('#loading').removeClass('showLoader');
+				data = JSON.parse(data);
+				data = JSON.stringify(data, undefined, 4);
+				$('#output').children().remove();
+				var json_stuff = $('<pre>');
+				var out = syntaxHighlight(data);
+				json_stuff[0].innerHTML = out;
+				$('#output').append(json_stuff);
+	
+			});
 	
 }
 
