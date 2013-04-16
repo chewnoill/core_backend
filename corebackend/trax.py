@@ -57,16 +57,17 @@ class sessionHandler:
         self.buildState(path)
         data = {}
         #get post name from state
-        for t in extra:
-            if t in self.state['extra']:
-                data[self.state['extra'][t]['name']]=extra[t]
-                ret = self.CM.post(self.state['extra'][t]['link'], 
-                                   data)
-                #return {'extra':extra,
-                #        'state':self.state['extra']}
-                
-            else:
-                raise ValueError('extra not found: '+str(self.state))
+        if 'extra' in self.state:
+            for t in extra:
+                if t in self.state['extra']:
+                    data[self.state['extra'][t]['name']]=extra[t]
+                    ret = self.CM.post(self.state['extra'][t]['link'], 
+                                       data)
+                    #return {'extra':extra,
+                    #        'state':self.state['extra']}
+                    
+                else:
+                    raise ValueError('extra not found: '+str(self.state))
         if 'Save' in self.state['links']:
             data['img-saveButton']='{78|44}'
             #return urllib.urlencode(data)
