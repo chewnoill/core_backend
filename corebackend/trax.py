@@ -61,13 +61,20 @@ class sessionHandler:
             for t in extra:
                 if t in self.state['extra']:
                     data[self.state['extra'][t]['name']]=extra[t]
-                    ret = self.CM.post(self.state['extra'][t]['link'], 
-                                       data)
-                    #return {'extra':extra,
-                    #        'state':self.state['extra']}
-                    
-                else:
-                    raise ValueError('extra not found: '+str(self.state))
+                
+        ret = self.CM.post(self.state['extra'][t]['link'],data)
+        #after extra data is saved, the data form names may be updated
+        #update data with new form names
+        newState = TraxParser.parseInfo(ret['content'])
+        newdat = {}
+        if 'extra' in newState:
+            for t in extra:
+                if t in newState['extra']:
+                    newdat[newState['extra'][t]['name']]=extra[t]
+        if len(newdat)>0:
+            data = newdat
+        #update self.state also?    
+        #probably not, links are not reset
         if 'Save' in self.state['links']:
             data['img-saveButton']='{78|44}'
             #return urllib.urlencode(data)
