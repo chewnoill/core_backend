@@ -3,3 +3,4 @@
 /__init__.pyc
 /main.pyc
 /trax.pyc
+*.pyc
