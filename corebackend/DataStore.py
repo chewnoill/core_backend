@@ -8,7 +8,40 @@ from google.appengine.ext import db
 class Menu(db.Model):
     name = db.StringProperty(required=True)
     JSONmenu = db.TextProperty()
+
+class PathLookup(db.Model):
+    arg1 = db.StringProperty(required=True)
+    arg2 = db.StringProperty()
+    path = db.StringProperty(required=True)
     
+class stats(db.Model):
+    type = db.StringProperty(required=True)
+    user_agent = db.StringProperty(required=True)
+    date = db.DateProperty(auto_now=True)
+    time = db.DateTimeProperty(auto_now=True)
+    username = db.StringProperty()
+    what = db.StringProperty()    
+
+def saveStat(user_agent,options):
+    if 'type' in options:
+        stat = stats(type=options['type'],
+                     user_agent=user_agent)       
+        if 'path' in options:
+            stat.what = str(options['path'])
+        if 'username' in options:
+            stat.username = options['username']
+            
+        stat.put()
+def saveError(user_agent,options):
+    if 'error' in options:
+        stat = stats(type='error',
+                     what=options['error'],
+                     user_agent=user_agent)
+        stat.put()
+    
+def getStats():
+    'not implemented'
+
 def insertMenu(name,JSON):
     #check if exists already
     found = db.GqlQuery("select * from Menu where name='%s'" % name)
@@ -26,10 +59,6 @@ def getMenu(name):
         return ret.JSONmenu
     return ret
 
-class PathLookup(db.Model):
-    arg1 = db.StringProperty(required=True)
-    arg2 = db.StringProperty()
-    path = db.StringProperty(required=True)
     
 def insertPath(arg1,arg2,path):
     found = None

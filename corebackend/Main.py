@@ -18,20 +18,28 @@ class MainPage(webapp2.RequestHandler):
         
         input = ''
         error = False
-        ret = error_msg = {'error':'an error has occurred!'}#default error message
-        
+        ret = error_msg = {'error':'an error has occurred!',
+                           'code':400,
+                           'detail':'unknown error'}#default error message
+        userAgent = 'unknown user agent'
+        if 'User-Agent' in self.request.headers:
+            userAgent = self.request.headers['User-Agent']
+        elif 'user-agent' in self.request.headers:
+            userAgent = self.request.headers['user-agent']
         try:
             
             input = json.loads(self.request.body)
         except ValueError:
             error_msg['code']=400
-            error_msg['message']='invalid input'
+            error_msg['detail']='invalid input'
             error_msg['error']='bad input'
             error = True
-
+       
         
         if error:
             'do nothing'
+        elif type == "get_menu":
+            ret = getMenu_no_id();
         elif 'username' in input and 'password' in input:
             username = input['username']
             password = input['password']
@@ -80,9 +88,11 @@ class MainPage(webapp2.RequestHandler):
             self.response.out.write(callback+'(')
         
         if error:
+            DataStore.saveError(userAgent,error_msg)
             msg = json.dumps(error_msg)
         else:
             #msg = str(ret)
+            DataStore.saveStat(userAgent,input)
             msg = json.dumps(ret)
         self.response.out.write(msg)
         if callback:
