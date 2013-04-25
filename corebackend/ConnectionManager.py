@@ -27,32 +27,43 @@ class ConnectionManager:
         params = urle.urlencode(data)
         self.headers['cookie']=self.cookies.getCookies()
         self.redirect = None
+        r1 = None
+        try:
+            r1 = urlfetch.Fetch(url = self.url+target,
+                                payload = params,
+                                method="POST",
+                                headers = self.headers,
+                                allow_truncated = False,
+                                follow_redirects = False,
+                                validate_certificate = True)
+            headers = r1.header_msg
+            self.process_headders(headers)
+            return self.gather_response(r1)
+        except DeadlineExceededError:
+            return {'error':'DeadlineExceededError',
+                    'detail':'Gateway Timeout: '+self.url+target,
+                    'code':504}
         
-        r1 = urlfetch.Fetch(url = self.url+target,
-                            payload = params,
-                            method="POST",
-                            headers = self.headers,
-                            allow_truncated = False,
-                            follow_redirects = False,
-                            validate_certificate = True)
-        headers = r1.header_msg
-        self.process_headders(headers)
-        return self.gather_response(r1)
     def get(self,target):
         self.headers['cookie']=self.cookies.getCookies()
         #print('get target',target)
         self.redirect = None
-        r1 = urlfetch.Fetch(url = self.url+target,
-                            payload = {},
-                            method="GET",
-                            headers = self.headers,
-                            allow_truncated = False,
-                            follow_redirects = False,
-                            validate_certificate = True)
-        headers = r1.header_msg
-        self.process_headders(headers)
-
-        return self.gather_response(r1)
+        try:
+            r1 = urlfetch.Fetch(url = self.url+target,
+                                payload = {},
+                                method="GET",
+                                headers = self.headers,
+                                allow_truncated = False,
+                                follow_redirects = False,
+                                validate_certificate = True)
+            headers = r1.header_msg
+            self.process_headders(headers)
+    
+            return self.gather_response(r1)
+        except DeadlineExceededError:
+            return {'error':'DeadlineExceededError',
+                    'detail':'Gateway Timeout: '+self.url+target,
+                    'code':504}
     def gather_response(self,response):
         ret = {}
         ret['content']=response.content
