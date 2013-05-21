@@ -22,19 +22,23 @@ class sessionHandler:
         creds = {'sourl':'/core-coreWeb.trax.mthr',
                  'userid':username,
                  'password':password}
-        response = self.CM.post("/signon.mthz",creds)
-        self.state = response
-        #get redirection
-        
-        if 'redirect' in response:
-            response = self.CM.get(response['redirect'])
-        #print(response)
-        
-        #parse links from message
-        #default page has "in" links and top nav bar [in, out, notes]
-        #self.state = response
-        self.state = TraxParser.parseInfo(response['content'])
-        #depth first search of link tree
+        try:
+            response = self.CM.post("/signon.mthz",creds)
+            self.state = response
+            #get redirection
+            
+            if 'redirect' in response:
+                response = self.CM.get(response['redirect'])
+            #print(response)
+            
+            #parse links from message
+            #default page has "in" links and top nav bar [in, out, notes]
+            #self.state = response
+            self.state = TraxParser.parseInfo(response['content'])
+            #depth first search of link tree
+        except DeadlineExceededError:
+            self.state = {'error':'timed out',
+                          'detail':'timed out trying to connect to https://trax.meditech.com/signon.mthz'}
         
     def getNotes(self):
         r = self.CM.get(self.state['links']['Note'])
