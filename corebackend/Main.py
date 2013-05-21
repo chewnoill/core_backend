@@ -84,22 +84,26 @@ class MainPage(webapp2.RequestHandler):
                 error_msg['error']='unauthorized'
                 error = True
         
-        if callback:
-            self.response.out.write(callback+'(')
-        
-        if error:
-            DataStore.saveError(userAgent,error_msg)
-            msg = json.dumps(error_msg)
-        else:
-            #msg = str(ret)
-            DataStore.saveStat(userAgent,input)
-            msg = json.dumps(ret)
-        self.response.out.write(msg)
-        if callback:
-            self.response.out.write(')')
+        try:
+            if callback:
+                self.response.out.write(callback+'(')
+            
+            if error:
+                DataStore.saveError(userAgent,error_msg)
+                msg = json.dumps(error_msg)
+            else:
+                #msg = str(ret)
+                DataStore.saveStat(userAgent,input)
+                msg = json.dumps(ret,encoding='ISO-8859-1')
+            self.response.out.write(msg)
+            if callback:
+                self.response.out.write(')')
+        except UnicodeDecodeError:
+            raise Exception("UnicodeDecodeError: "+str(ret))
 
 
 def getStatus(traxSession,data):
+    
     return traxSession.getStatus()
 def getNotes(traxSession,data):
     return traxSession.getNotes()
@@ -121,7 +125,13 @@ def setStatus(traxSession,data):
     return ret 
 
 def setNotes(traxSession,data):
-    'TODO'
+    notes = None
+    if 'notes' in data:
+        ret = traxSession.postNotes(notes)
+        return ret 
+    else:
+        return {'error':'incomplete message'}
+    
 def buildMenu(traxSession,data):
     #This takes a long time, probably shouldn't do it very often
     MenuObj = traxSession.buildMenu()

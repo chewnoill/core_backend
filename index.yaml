@@ -1,0 +1,8 @@
+indexes:
+- kind: stats
+  properties:
+  - name: date
+  - name: time
+  - name: username
+    direction: desc
+ 

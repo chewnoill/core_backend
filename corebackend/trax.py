@@ -44,28 +44,37 @@ class sessionHandler:
         
     def getStatus(self):
         #if I already have the status, don't get it again
+        ret = {}
+        
         if ('info' in self.state and 
             'status' in self.state['info'] and 
             'full_name' in self.state['info']):
-            return self.state['info']
-        r = self.CM.get(self.state['links']['In'])
-        self.state = TraxParser.parseInfo(r['content'])
-        
-        return self.state['info']
+            ret = self.state['info']
+        else:
+            r = self.CM.get(self.state['links']['In'])
+            self.state = TraxParser.parseInfo(r['content'])
+            ret = self.state['info']
+        ret['notes'] = self.getNotes()['notes']
+        return ret
     
     def postPathSave(self,path,extra={}):
         self.buildState(path)
         data = {}
+        ret = {}
         #get post name from state
         if 'extra' in self.state:
             for t in extra:
-                if t in self.state['extra']:
+                if (t in self.state['extra'] and
+                    'name' in self.state['extra'][t]):
                     data[self.state['extra'][t]['name']]=extra[t]
-                
-        ret = self.CM.post(self.state['extra'][t]['link'],data)
+                if (t in self.state['extra'] and
+                    'link' in self.state['extra'][t]):
+                    ret = self.CM.post(self.state['extra'][t]['link'],data)
         #after extra data is saved, the data form names may be updated
         #update data with new form names
-        newState = TraxParser.parseInfo(ret['content'])
+        newState = {}
+        if 'content' in ret:
+            newState = TraxParser.parseInfo(ret['content'])
         newdat = {}
         if 'extra' in newState:
             for t in extra:
@@ -83,6 +92,40 @@ class sessionHandler:
         return {'error':'invalid path',
                 'code':404}
 
+    def postNotes(self,notes):
+        path = ['Note']
+        notes = (urllib.urlencode(notes) +
+                 urllib.urlencode('<style type="text/css">\
+                 body {\
+                     background: #FFF;\
+                     font-family: verdana;\
+                     font-size: 75%;\
+                     }\
+                     </style>&img-saveButton={113|36}'))
+        extra = {'note_form_name':notes}
+        self.buildState(path)
+        data = {}
+        ret = {}
+        #get post name from state
+        if 'extra' in self.state:
+            for t in extra:
+                if (t in self.state['extra'] and 
+                    'link' in self.state['extra'][t] and
+                    'name' in self.state['extra'][t]):
+                    data[self.state['extra'][t]['name']]=extra[t]
+                    ret = self.CM.post(self.state['extra'][t]['link'],data)
+        newState = {}
+        if 'content' in ret:
+            newState = TraxParser.parseInfo(ret['content'])
+        newdat = {}
+        if 'extra' in newState:
+            for t in extra:
+                if t in newState['extra']:
+                    newdat[newState['extra'][t]['name']]=extra[t]
+        if 'Save' in self.state['links']:
+            #return urllib.urlencode(data)
+            ret = self.CM.post(self.state['links']['Save'],data)
+            return ret
     def logOut(self):
         'ToDo'
     
