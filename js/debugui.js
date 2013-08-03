@@ -23,6 +23,10 @@ var path = [];
 var extra = [];
 function actionChangeListner(){
 	var type = $('#action_type').val();
+	$('#secondary').children().remove();
+	$('#tertiary').children().remove();
+	path = [];
+	extra = [];
 	if(type=='set_status'){
 		newSelector = $('<select id="lvl0-select"></select>');
 		newSelector.append(
@@ -59,11 +63,21 @@ function actionChangeListner(){
 		lvl0.append(endbracket);
 		$('#secondary').append(lvl0);
 		
+	} else if (type=='lookup_person'){
+		
+		lookup_row = $('<tr id="lookup_row"></tr>');
+		lookup_label = 'lookup_key: '
+		label = $('<td></td>').append(lookup_label);
+		lookup_row.append(label);
+		text = $('<input type="text" id="lookup_key"></input>');
+		extraText = $('<td></td>').append(text);
+		lookup_row.append(extraText)
+		$('#secondary').append(lookup_row);
 	} else {
 		$('#secondary').children().remove();
 		$('#tertiary').children().remove();
 		path = [];
-		extra = []
+		extra = [];
 		
 
 	}
@@ -230,7 +244,10 @@ function submit(){
 		}
 	}
 	if(has_extra){
-		data['extra']=extra_data
+		data['extra']=extra_data;
+	}
+	if(data['type']=='lookup_person'){
+		data['lookup_key']=$('#lookup_key').val();
 	}
 	//show data, hide password
 	input_data = JSON.parse(JSON.stringify(data));

@@ -13,8 +13,8 @@ import urllib
 class sessionHandler:
     def __init__(self,username,password):
         #setup connection manager
-        #local GAE won't get https connection
-        self.CM = ConnectionManager.ConnectionManager("https://trax.meditech.com")
+        LINK="https://trax.meditech.com"
+        self.CM = ConnectionManager.ConnectionManager(LINK)
         
         #builds initial set of cookies
         self.CM.get("/core-coreWeb.trax.mthr")
@@ -27,20 +27,36 @@ class sessionHandler:
         #get redirection
         
         if 'redirect' in response:
+            
             response = self.CM.get(response['redirect'])
         #print(response)
         
         #parse links from message
         #default page has "in" links and top nav bar [in, out, notes]
         #self.state = response
+        self.content = response['content']
         self.state = TraxParser.parseInfo(response['content'])
+        if len(self.state['error'])>0:
+            raise UnautherizedError(self.state['error'])
         #depth first search of link tree
-        
+    def get(self,link):
+        r = self.CM.get(self.state['links'][link])
+        state = TraxParser.parseInfo(r['content'])
+        if not (len(state['extra'])==0 and
+                len(state['links'])==0):
+            self.state=state
+        return r['content']
+    def post(self,link,data):
+        r = self.CM.post(link,data)
+        state = TraxParser.parseInfo(r['content'])
+        return {'content':r['content'],
+                'state':state}
     def getNotes(self):
         r = self.CM.get(self.state['links']['Note'])
         self.state = TraxParser.parseInfo(r['content'])
         
-        return {'notes':self.state['notes']}
+        return {'notes':self.state['notes'],
+                'content':r['content']}
         
     def getStatus(self):
         #if I already have the status, don't get it again
@@ -52,43 +68,38 @@ class sessionHandler:
             ret = self.state['info']
         else:
             r = self.CM.get(self.state['links']['In'])
+            self.content = r['content']
             self.state = TraxParser.parseInfo(r['content'])
             ret = self.state['info']
-        ret['notes'] = self.getNotes()['notes']
+        notes = self.getNotes()
+        ret['notes'] = notes['notes']
         return ret
     
     def postPathSave(self,path,extra={}):
         self.buildState(path)
-        data = {}
+        data = None
+        link = None
         ret = {}
         #get post name from state
         if 'extra' in self.state:
             for t in extra:
-                if (t in self.state['extra'] and
+                if (t in self.state['extra'] and 
                     'name' in self.state['extra'][t]):
+                    data = {}
                     data[self.state['extra'][t]['name']]=extra[t]
                 if (t in self.state['extra'] and
                     'link' in self.state['extra'][t]):
-                    ret = self.CM.post(self.state['extra'][t]['link'],data)
-        #after extra data is saved, the data form names may be updated
-        #update data with new form names
-        newState = {}
-        if 'content' in ret:
-            newState = TraxParser.parseInfo(ret['content'])
-        newdat = {}
-        if 'extra' in newState:
-            for t in extra:
-                if t in newState['extra']:
-                    newdat[newState['extra'][t]['name']]=extra[t]
-        if len(newdat)>0:
-            data = newdat
-        #update self.state also?    
-        #probably not, links are not reset
+                    link = self.state['extra'][t]['link']
+                if (link and data):
+                    ret = self.post(link,data)
+                    link = None
+                    data = None
+        #click save... if you can
         if 'Save' in self.state['links']:
-            data['img-saveButton']='{78|44}'
+            #data['img-saveButton']='{78|44}'
             #return urllib.urlencode(data)
-            ret = self.CM.post(self.state['links']['Save'],data)
-            return ret
+            ret = self.CM.get(self.state['links']['Save'])
+            return {'saved':True}
         return {'error':'invalid path',
                 'code':404}
 
@@ -125,7 +136,12 @@ class sessionHandler:
         if 'Save' in self.state['links']:
             #return urllib.urlencode(data)
             ret = self.CM.post(self.state['links']['Save'],data)
-            return ret
+            if ret.status_code==200:
+                return {'notes':notes}
+            else:
+                return {'error':'some error',
+                        'code':404,
+                        'detail': 'unknown'}
     def logOut(self):
         'ToDo'
     
@@ -168,6 +184,9 @@ class sessionHandler:
                 
     def buildState(self,path):
         for item in path:
+            if item == 'Save':
+                #dont save here
+                return
             r = self.CM.get(self.state['links'][item])
             newState = TraxParser.parseInfo(r['content'])
             if len(newState['links'])>0:
@@ -183,7 +202,12 @@ class sessionHandler:
             return 'link not found'
         
 
-    
+class UnautherizedError(Exception):
+    def __init__(self, message='', Errors=None):
+        Exception.__init__(self, message)
+        self.Errors = Errors
+        
+        
 class StateError(Exception):  
     def __init__(self,value):
         self.value = value
@@ -193,11 +217,7 @@ class StateError(Exception):
 globalMenus = ['In','Out','Note']
 leaf = ['Save']
 
-if __name__ == "__main__":
-    uname = ''
-    password = ''
-    sh = sessionHandler(uname,password)
-    sh.buildMenu()
+
     
                 
 

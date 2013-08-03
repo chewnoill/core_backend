@@ -59,6 +59,7 @@ class ConnectionManager:
         ret['status']=response.status_code
         if self.redirect:
             ret['redirect']=self.redirect
+        
         return ret
     def process_headders(self,header_msg):
         if 'location' in header_msg:

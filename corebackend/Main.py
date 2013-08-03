@@ -5,10 +5,12 @@ Created on Mar 21, 2013
 '''
 import webapp2
 import json
-import trax as trax
+import trax
+import core
 import DataStore
-
-
+from google.appengine import runtime
+#from google.appengine.runtime import DeadlineExceededError as runDeadlineExceededError
+#import DeadlineExceededError as apiDeadlineExceededError
 class MainPage(webapp2.RequestHandler):
     def get(self):
         self.response.headers['Content-Type'] = 'text/plain'
@@ -16,7 +18,7 @@ class MainPage(webapp2.RequestHandler):
     def post(self):
         callback = self.request.GET.get('callback')
         
-        input = ''
+        input_fields = {}
         error = False
         ret = error_msg = {'error':'an error has occurred!',
                            'code':400,
@@ -27,8 +29,7 @@ class MainPage(webapp2.RequestHandler):
         elif 'user-agent' in self.request.headers:
             userAgent = self.request.headers['user-agent']
         try:
-            
-            input = json.loads(self.request.body)
+            input_fields = json.loads(self.request.body)
         except ValueError:
             error_msg['code']=400
             error_msg['detail']='invalid input'
@@ -38,62 +39,56 @@ class MainPage(webapp2.RequestHandler):
         
         if error:
             'do nothing'
-        elif type == "get_menu":
-            ret = getMenu_no_id();
-        elif 'username' in input and 'password' in input:
-            username = input['username']
-            password = input['password']
-            if len(username)==0 or len(password)==0:
-                error_msg['code']=401
-                error_msg['detail']='username and password required'
-                error_msg['error']='unauthorized'
-                error = True
-            elif 'type' in input:
-                if input['type'] in types:
-                    #go go go
-                    traxSession = trax.sessionHandler(username,password)
-                    ret = traxSession.state
+        elif (has_required(['type'],input_fields)['has_required'] and
+              input_fields['type'] in types):
+                
+            #check for missing fields
+            check = has_required(types[input_fields['type']]['required_fields'],
+                                 input_fields)
+            if check['has_required']:
+                #go go go
+                
+                try:
+                    ret = types[input_fields['type']]['function'](input_fields)
                     
-                    if ret['error']=='Invalid username/password, try again.':
-                        #oops, one more error
-                        error_msg['code']=401
-                        error_msg['detail']='username/password rejected'
-                        error_msg['error']='unauthorized'
-                        error = True
-                    else:
-                        #dispatch to do stuff
-                        ret = types[input['type']](traxSession,input)
-                        #check for more errors
-                else:
-                    error_msg['code']=404
-                    error_msg['detail']='unknown type: '+input['type']
-                    error_msg['error']='bad input'
+                except runtime.DeadlineExceededError:
+                    error_msg={'code':404,
+                               'detail':'trax.meditech.com took to long to respond',
+                               'error':'DeadlineExceededError'}
                     error = True
+                except runtime.apiproxy_errors.DeadlineExceededError:
+                    error_msg={'code':404,
+                               'detail':'trax.meditech.com took to long to respond',
+                               'error':'DeadlineExceededError'}
+                    error = True
+                except Exception,e:
+                    error_msg={'code':404,
+                               'detail':str(e),
+                               'error':'UnknownError'}
+                    error = True
+                
             else:
-                error_msg['code']=400
-                error_msg['detail']='missing type'
-                error_msg['error']='bad input'
+                error_msg = {'code':404,
+                             'detail':'missing required field(s): '+str(check['missing_fields']),
+                             'error':'missing required'}
                 error = True
         else:
-            if 'type' in input and input['type']=='get_menu':
-                ret = getMenu_no_id()
-            else:
-                #return error
-                error_msg['code']=401
-                error_msg['detail']='username and password required'
-                error_msg['error']='unauthorized'
-                error = True
+            
+            error_msg['code']=404
+            error_msg['detail']='missing required field: type'
+            error_msg['error']='missing required'
+            error = True
         
         try:
             if callback:
                 self.response.out.write(callback+'(')
             
             if error:
-                DataStore.saveError(userAgent,error_msg)
+                #DataStore.saveError(userAgent,error_msg)
                 msg = json.dumps(error_msg)
             else:
                 #msg = str(ret)
-                DataStore.saveStat(userAgent,input)
+                #DataStore.saveStat(userAgent,input_fields)
                 msg = json.dumps(ret,encoding='ISO-8859-1')
             self.response.out.write(msg)
             if callback:
@@ -102,37 +97,138 @@ class MainPage(webapp2.RequestHandler):
             raise Exception("UnicodeDecodeError: "+str(ret))
 
 
-def getStatus(traxSession,data):
-    
+def get_status(data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    traxSession = None
+    try:
+        traxSession = trax.sessionHandler(username,password)
+    except trax.UnautherizedError, e:
+        return {'error':'UnautherizedError',
+                'detail':e.message}
+    except KeyError:
+        return {'code':404,
+                'detail':'trax.meditech.com returned an unexpected result',
+                'error':'parsing error'}
+    #-----------------------------
+    ret = traxSession.state
     return traxSession.getStatus()
-def getNotes(traxSession,data):
+def get_notes(data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    traxSession = None
+    try:
+        traxSession = trax.sessionHandler(username,password)
+    except trax.UnautherizedError, e:
+        return {'error':'trax.UnautherizedError',
+                'detail':e.message}
+    except KeyError:
+        return {'code':404,
+                'detail':'trax.meditech.com returned an unexpected result',
+                'error':'parsing error'}
+    #-----------------------------
+    
     return traxSession.getNotes()
-def setStatus(traxSession,data):
+def set_status(data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    path = data['path']
+    #-----------------------------
+    traxSession = None
+    try:
+        traxSession = trax.sessionHandler(username,password)
+    except trax.UnautherizedError, e:
+        return {'error':'trax.UnautherizedError',
+                'detail':e.message}
+    except KeyError:
+        return {'code':404,
+                'detail':'trax.meditech.com returned an unexpected result',
+                'error':'parsing error'}
+    ret = traxSession.state
+    
     extra = {}
-    path = []
-    if 'path' in data:
-        path = data['path']
-    else:
-        #no path, return error
-        ret = {'error':'no path',
-               'code':404,
-               'detail': 'no path recieved, malformed data'}
-        return ret
     if 'extra' in data:
         extra = data['extra']
     
     ret = traxSession.postPathSave(path,extra)
     return ret 
 
-def setNotes(traxSession,data):
+def set_notes(traxSession,data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    traxSession = None
+    try:
+        traxSession = trax.sessionHandler(username,password)
+    except trax.UnautherizedError, e:
+        return {'error':'trax.UnautherizedError',
+                'detail':e.message}
+    except KeyError:
+        return {'code':404,
+                'detail':'trax.meditech.com returned an unexpected result',
+                'error':'parsing error'}
+    #-----------------------------
+    
     notes = None
     if 'notes' in data:
         ret = traxSession.postNotes(notes)
         return ret 
     else:
         return {'error':'incomplete message'}
+
+def lookup_person(data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    lookup_key = data['lookup_key']
+    coreSession = None
+    try:
+        coreSession = core.sessionHandler(username,password)
+    except core.UnautherizedError, e:
+        return {'error':'core.UnautherizedError',
+                'detail':e.message}
+    #-----------------------------
+    return coreSession.lookup_person(lookup_key)
+
+def list_events(data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    coreSession = None
+    try:
+        coreSession = core.sessionHandler(username,password)
+    except core.UnautherizedError, e:
+        return {'error':'core.UnautherizedError',
+                'detail':e.message}
+    #-----------------------------
+    return coreSession.get_events()
+
+def build_menu(data):
+    #-----------------------------
+    #required fields
+    username = data['username']
+    password = data['password']
+    traxSession = None
+    try:
+        traxSession = trax.sessionHandler(username,password)
+    except trax.UnautherizedError, e:
+        return {'error':'UnautherizedError',
+                'detail':e.message}
+    except KeyError:
+        return {'code':404,
+                'detail':'trax.meditech.com returned an unexpected result',
+                'error':'parsing error'}
+    #-----------------------------
     
-def buildMenu(traxSession,data):
     #This takes a long time, probably shouldn't do it very often
     MenuObj = traxSession.buildMenu()
     
@@ -142,13 +238,8 @@ def buildMenu(traxSession,data):
     
     return ret
     
-def getMenu(traxSession,data):
-    ret = DataStore.getMenu('menu')
-    
-    if not ret:
-        ret = buildMenu(traxSession,data)
-    return json.loads(ret)
-def getMenu_no_id():
+
+def get_menu_no_id(data = None):
     ret = DataStore.getMenu('menu')
     
     if not ret:
@@ -159,7 +250,7 @@ def getMenu_no_id():
     else:
         return json.loads(ret)
 def buildReversePathLookup():
-    menu = getMenu_no_id()
+    menu = get_menu_no_id()
     if 'error' in menu:
         return menu
     
@@ -186,23 +277,42 @@ def buildReversePathLookup():
                                                  path = json.dumps([o,p,tq]))
                             #print('\titm: %s %s' % (q,[o,p,q]))
 
+def has_required(required_fields,input_fields):
+    missing_fields = []
+    
+    for field in required_fields:
+        if not field in input_fields:
+            missing_fields += [field]
+            
+    if len(missing_fields)==0:
+        return {'has_required':True}
+    else:
+        return {'has_required':False,
+                'missing_fields':missing_fields}
 
-
-def notImplemented(traxSession,data):
+def not_implemented(data):
     ret = {'error': 'not found',
            'detail': 'not implemented, try again later',
            'code': 404}
     return ret
-    
+
 #dispatch dictionary
-types = {'get_status': getStatus,
-         'get_notes': getNotes,
-         'set_status': setStatus,
-         'set_notes': notImplemented,
-         'list_events': notImplemented,
-         'find_person': notImplemented,
-         'build_menu':notImplemented,
-         'get_menu':getMenu}
+types = {'get_status': {'required_fields':['username','password'],
+                        'function':get_status},
+         'get_notes': {'required_fields':['username','password'],
+                       'function':get_notes},
+         'set_status': {'required_fields':['username','password','path'],
+                        'function':set_status},
+         'set_notes': {'required_fields':['username','password'],
+                       'function':not_implemented},
+         'list_events': {'required_fields':['username','password'],
+                         'function':list_events},
+         'lookup_person': {'required_fields':['username','password','lookup_key'],
+                           'function':lookup_person},
+         'build_menu':{'required_fields':['username','password'],
+                       'function':not_implemented},
+         'get_menu':{'required_fields':[],
+                     'function':get_menu_no_id}}
          
 app = webapp2.WSGIApplication([('/handler.html', MainPage)],
                               debug=True)

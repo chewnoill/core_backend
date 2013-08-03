@@ -4,263 +4,212 @@ Created on Feb 10, 2013
 @author: will
 '''
 from HTMLParser import HTMLParser #@UnresolvedImport@UnusedImport
+import re
+import pprint
+import unittest
 
-info = {'z0-00_inBody-0-4-0-0s':'status',
+
+info_id = {'z0-00_inBody-0-4-0-0s':'status',
         'z0-00_outBody-0-4-0-0s':'status',
+        'z0-00_noteBody-0-4-0-1s':'status',
         'z0-00_inBody-0-1-0-1s':'full_name',
-        'z0-00_outBody-0-1-0-1s':'full_name'}
+        'z0-00_outBody-0-1-0-1s':'full_name',
+        'z0-00_noteBody-0-1-0-2s':'full_name'}
+
+select_id = {'z0-00_dateBody-0-6-0-0s':'date_select_name',
+             'z0-00_summaryBody-0-6-0-2_0i':'phone_ext_name'}
 select = {'date':'z0-00_dateBody-0-6-0-0s',
           'phone':'z0-00_summaryBody-0-6-0-2_0i'}
 def parseInfo(page,debug=False):
     #returns a dictionary of all links found
     tp = TraxInfoParser(debug=debug)
     tp.feed(page)
-    ret =  {"links":tp.links,
-            "info":tp.info,
+    ret =  {"links":tp.gather_links(),
+            "info":tp.gather_info(),
+            "extra":tp.getExtra(),
             "notes":tp.notes,
-            "error":tp.error}
-    extra = tp.getExtra()
-    if extra:
-        ret['extra']=extra
+            "error":tp.gather_error()}
+    
+    if debug:
+        ret['tags']=tp.tags
+
     return ret
 
 class TraxInfoParser(HTMLParser):
     def __init__(self,debug=False):
         self.debug = debug
-        
         HTMLParser.__init__(self)
-        self.onclick = ''
-        self.alt = ''
-        self.gather_info = False
-        self.gather_info_tag = ''
-        
-        self.gather_notes = False
-        self.gather_error = False
-        self.error = ''
-        self.notes = ''
         self.links = {}
         self.info = {}
-        
+        self.tags = {}
+        self.gather_notes = False
+        self.notes = ''
+        self.error = ''
+        self.obj={}
+        self.parent=''
         self.dateSelect = False
-        self.dateSelectName = ''
-        self.dateSelectLink = ''
-        
         self.phoneExtInput = False
-        self.phoneExtName = ''
-        self.phoneExtLink = ''
-        
         self.note_form = False
-        self.note_form_name = ''
-
     def getExtra(self):
         ret = {}
-        if self.dateSelect or self.phoneExtInput or self.note_form: 
-            if self.dateSelect:
-                ret['date_select_name']={'name':self.dateSelectName,
-                                         'link':self.dateSelectLink}
-            if self.phoneExtInput:
-                ret['phone_ext_name']={'name':self.phoneExtName,
-                                       'link':self.phoneExtLink}
-            if self.note_form:
-                ret['note_form_name']={'name':self.note_form_name}
-            return ret
-        else:
-            return False
+        for s in select_id:
+            if s in self.tags:
+                ret[select_id[s]]={'name':self.tags[s]['name'],
+                                   'link':self.tags[s]['link']}
+        return ret
+
+    def gather_links(self):
+        links = {}
+        for tag in self.tags:
+            if 'alt' in self.tags[tag]:
+                if 'link' in self.tags[tag]:
+                    links[self.tags[tag]['alt']]=self.tags[tag]['link']
+                elif 'link' in self.tags[self.tags[tag]['parent']]:
+                    links[self.tags[tag]['alt']]=self.tags[self.tags[tag]['parent']]['link']
+        return links
+    def gather_error(self):
+        if 'message' in self.tags:
+            return self.tags['message']['data']
         
+    def gather_info(self):
+        info = {}
+        for i in info_id:
+            if i in self.tags:
+                t = self.tags[i]['data']
+                t = filter(lambda x: not x in '\r\n\t', t)
+                info[info_id[i]]=t
+        return info
+    def gather_error(self):
+        if 'message' in self.tags:
+            return self.tags['message']['data']
+        return ''
+    def convert_attrs(self,attrs):
+        ret = {}
+        for a in attrs:
+            ret[a[0]]=a[1]
+        return ret
     def handle_starttag(self, tag, attrs):
         if self.debug:
             print('start tag %s' % tag)
-        self.maybe_save_tag()
-        
         if self.gather_notes:
             note = '<'+tag
-            for attr in attrs:
-                note += ' '+attr[0]+'="'+attr[1]+'"'
+            for a in attrs:
+                note += ' '+a[0]+'="'+a[1]+'"'
             note += '>'
             self.notes+=note
             return
+        self.obj = {}
+        self.obj['tag']=tag
+        self.obj['parent']=self.parent
         
-        if tag == 'img' or tag == 'div':
-            
-            for attr in attrs:
-                if attr[0] == 'alt':
-                    #image tag, get alt
-                    self.alt = attr[1]
-                
-                elif attr[0] == 'onclick':
-                    #print("\ton click: %s" % attr[1])
-                    try:
-                        t = attr[1]
-                        s1 = 'javascript'
-                        s = t.index(s1)+len(s1)
-                        s2 = 'Clicked'
-                        s = t.index(s2,s)+len(s2)
-                        s3 = '".'
-                        s = t.index(s3,s)+len(s3)
-                        e = t.index('"',s)
-                        
-                        #print("\ton click: %d:" % s, "%d" % e)
-                        self.onclick = t[s:e]
-                    except ValueError:
-                        #?? no javascript here?
-                        continue
-                        
-                elif attr[0]=='id': 
-                    if attr[1] == 'message':
-                        self.gather_error = True
-
-                        
-        elif tag == 'select':
-            if self.debug:
-                print(attrs)
-            #date selection 
-            for attr in attrs:
-                if attr[0]=='id': 
-                    if attr[1] == select['date']:   
-                        self.dateSelect = True
-                elif attr[0]=='name':
-                    #form name to be used when posting
-                    self.dateSelectName = attr[1]
-                elif attr[0]=='onchange':
-                    self.dateSelectLink = self.parse_link(attr[1])
-        elif tag == 'input':
-            #phone ext input
-            for attr in attrs:
-                if attr[0]=='id': 
-                    if attr[1] == select['phone']:   
-                        self.phoneExtInput = True
-                elif attr[0]=='name':
-                    #form name to be used when posting
-                    self.phoneExtName = attr[1]
-                elif attr[0]=='onclick':
-                    self.phoneExtLink = self.parse_link(attr[1])
-                    
-        elif tag == 'span':
-            
-            for attr in attrs:
-                #print('get info %s' % str(attr))
-                if attr[0] == 'id' and (attr[1] in info):
-                    
-                    self.gather_info_tag  = info[attr[1]]
-                    self.gather_info = True
-                
-        #print("Encountered the beginning of a %s tag" % tag)
-        #print("\tattrs %s" % attrs)
-    
-    def parse_link(self,tag):
-        try:
-            t = tag
-            s1 = 'javascript'
-            s = t.index(s1)+len(s1)
-            s2 = 'Clicked'
-            s = t.index(s2,s)+len(s2)
-            s3 = '".'
-            s = t.index(s3,s)+len(s3)
-            e = t.index('"',s)
-            
-            #print("\ton click: %d:" % s, "%d" % e)
-            
-            return t[s:e]
-        except ValueError:
-            #?? no javascript here?
-            return None
+        attr = self.convert_attrs(attrs)
+        
+        if self.debug:
+            print('start tag attrs %s' % str(attr))
+        if 'alt' in attr:
+            self.obj['alt']=attr['alt']
+        if 'id' in attr:
+            self.obj['id']=attr['id']
+        if 'name' in attr:
+            self.obj['name']=attr['name']
+        if 'id' in self.obj:
+            if not tag == 'img':
+                self.parent = self.obj['id']
+            self.tags[self.obj['id']]=self.obj
+        
     def handle_endtag(self, tag):
         if self.debug:
             print('end tag: %s' % tag)
+        
         if self.gather_notes:
             note = '</'+tag+'>'
             self.notes+=note
             return
+        if (not tag == 'img' and
+            'parent' in self.obj):
+            self.parent = self.obj['parent']
+
+        self.obj = {}
         
-
-        self.maybe_save_tag()
-        ##give up on tag
-        self.name = self.onclick = ''
-        self.gather_info = False
-        if self.gather_error:
-            self.gather_error = False
-            
-    def maybe_save_tag(self):
-        if len(self.onclick)>0 and len(self.alt)>0:
-            self.links[self.alt] = self.onclick
-            self.alt = self.onclick = ''
-
 
     def handle_data(self, data):
         if self.debug:
             print 'handling data: %s' %data
-        end_note_body = not data.find('resetkeymap') == -1
-        if end_note_body:
-            self.gather_notes = False
-        if self.gather_info:
-            if self.gather_info_tag in self.info:
-                self.info[self.gather_info_tag] += data
+            print(self.obj)
+        if (('tag' in self.obj and 
+             self.obj['tag']=='script') or
+            len(self.obj)==0):
+            self.handle_script_data(data)
+        elif 'id' in self.obj:
+            if 'data' in self.tags[self.obj['id']]:
+                self.tags[self.obj['id']]['data']+=data
             else:
-                self.info[self.gather_info_tag] = data
-            
+                self.tags[self.obj['id']]['data']=data
+
         if self.gather_notes:
             self.notes += data
-        if self.gather_error:
-            self.error += data
-            
         start_note_body = not data.find('newrichtext') == -1
         if start_note_body:
             s = data.split('|')
             self.note_form_name = s[1]
             self.note_form = True
             self.gather_notes = True
-    def handle_entityref(self,data):
-        if self.gather_info:
-            if self.gather_info_tag in self.info:
-                self.info[self.gather_info_tag] += '&'+data+';'
-            else:
-                self.info[self.gather_info_tag] = '&'+data+';'
+        
+    def handle_script_data(self,data):
+        if self.debug:
+            print('handle_script_data')
+        u = data.split('updeventhooks')
+        if len(u)>1:
+            self.gather_notes = False
+        if self.debug:
+            for v in u:
+                print(v)
+        reg_ex = ('(?P<before>.*?)'+
+                  '((%7F)|\x7f)(?P<item_id>.*?)((%7F)|\x7f)'+
+                  '(?P<garbage>.*?)'+
+                  '\.(?P<link>/.*?\.mthd)'+
+                  '(?P<after>.*?)')
+        for v in u:
+            result = re.search(reg_ex,v)
+            if result:
+                id = result.group('item_id')
+                link = result.group('link')
+                if id in self.tags:
+                    self.tags[id]['link']=link
+                elif id and link:
+                    self.tags[id]={}
+                    self.tags[id]['link']=link
             
-        if self.gather_notes:
-            self.notes += '&'+data+';'
-    def handle_charref(self,data):
-        if self.gather_info:
-            if self.gather_info_tag in self.info:
-                self.info[self.gather_info_tag] += chr(int(data))
-            else:
-                self.info[self.gather_info_tag] = chr(int(data))
-            
-        if self.gather_notes:
-            self.notes += chr(int(data))
+
     def __str__(self):
         return str(self.ret)
-    
-    
+
+class Test(unittest.TestCase):
+    def test_landing(self):
+            
+        t = '<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<title>Mobile Trax</title>\r\n<script type=\"text/javascript\" src=\"./system/jquery/jquery.js\"></script>\r\n<script type=\"text/javascript\" src=\"./system/scripts/main.js\"></script>\r\n<script type=\"text/javascript\">\r\n<!--\r\n  window.onbeforeunload = confirmExit;\r\n//-->\r\n</script>\r\n<style type=\"text/css\">\r\n.row {width:100%;\r\n      overflow:auto;\r\n      clear:both;}\r\n.component {position:relative;}\r\n.clickable {cursor:pointer;}\r\n.popupcalendarlink {cursor:default;\r\n                    border-color:#000;\r\n                    text-align:center; font-weight: 700;\r\n                    color: blue;}\r\n.popupcalendarheader { background: #ddf; }\r\n.popupcalendarhover { background: #ddf; }\r\nbody { margin:0; padding:0; font-family:Verdana,Helvetica,Arial,sans-serif;}\r\n@media screen {\r\n .regioncontainer {\r\n    width:100%; height:100%;\r\n    top:0; left:0;\r\n    position:absolute;\r\n    padding:0; margin:0;\r\n }\r\n}\r\n@media print {\r\n .regioncontainer {\r\n\r\n    padding:0; margin:0;\r\n }\r\n}\r\n.sysnormaltext {color:black; font-style:normal;}\r\n.sysoverridegraytext {color:gray; font-style:italic;}\r\n.sysoverridegraytextselect {color:gray;}\r\n.link {cursor:pointer;}\r\ndiv.popupshield {width:100%; height:100%;\r\n                 background:#000;\r\n                 position:absolute; margin:0; border:none; padding:0; top:0; left:0;\r\n                 opacity:0.2; filter:alpha(opacity=20);}\r\ndiv.popupshield2 {width:100%; height:100%;\r\n                  background:#000;\r\n                  position:absolute; margin:0; border:none; padding:0; top:0; left:0;\r\n                  opacity:0.0; filter:alpha(opacity=0);}\r\ndiv.popupouter {position:absolute; height:auto;\r\n                border:1px solid black;\r\n                background:#fff;}\r\ndiv.popupheader {background:#4040e0; color:white;\r\n                 margin:0; padding:2px;}\r\ndiv.popupbody {margin:0; padding:5px;}\r\ntable {word-wrap:break-word;}\r\n.style0 {font-size:medium; overflow-x:hidden; overflow-y:hidden;}\r\n.style1 {bottom:0; font-size:medium; left:0; margin:0; overflow-x:hidden; overflow-y:hidden; padding:0; position:absolute; right:0; top:0; width:100%;}\r\n.style2 {-webkit-overflow-scrolling:touch; bottom:0; font-size:medium; left:0; margin:0; overflow-y:auto; padding:0; position:absolute; right:0; top:0; width:100%;}\r\n.style3 {float:left; width:100%;}\r\n.style4 {text-align:center; vertical-align:middle;}\r\n.style5 {width:auto;}\r\n.style6 {margin-left:auto; margin-right:auto; display:block;}\r\n.style7 {text-align:center; vertical-align:middle; font-size:x-small;}\r\n.style8 {margin-left:auto; margin-right:auto;}\r\n.style9 {border-left:none; border-right:none; border-top:none;}\r\n.style10 {border-bottom:none; border-left:none; border-right:none; border-top:none;}\r\n</style>\r\n</head>\r\n<body id=\'body\'onload=\'BodyOnLoad();\'>\r\n<div id=\"regioncontainer-0\" class=\"regioncontainer style0\">\r\n<div id=\"arrangement-0-0\" class=\"style1\">\r\n<div id=\"z0-00_inBody\" class=\"style2\">\r\n<div class=\"style3\">\r\n<div id=\"z0-00_inBody-0-1\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-1-0\" style=\"float:left;width:99.000%;\">\r\n<div id=\"z0-00_inBody-0-1-0-0\" class=\"component\">\r\n<style type=\"text/css\">@media screen and (min-width: 1px) {img.clickable {width:60px;height:60px;}img.style6 {width:60px;height:30px;}}@media screen and (min-width: 320px) {img.clickable {width:90px;height:81px;}img.style6 {width:90px;height:45px;}}@media screen and (min-width: 360px) {img.clickable {width:110px;height:99px;}img.style6 {width:108px;height:54px;}}@media screen and (min-width: 640px) {img.clickable {width:130px;height:117px;}img.style6 {width:130px;height:65px;}}@media screen and (min-width: 800px) {img.clickable {width:150px;height:135px;}img.style6 {width:150px;height:75px;}}@media screen and (min-width: 960px) {img.clickable {width:170px;height:153px;}img.style6 {width:170px;height:85px;}}@media screen and (min-width: 1120px) {img.clickable {width:190px;height:171px;}img.style6 {width:190px;height:95px;}}</style></div>\r\n <div id=\"z0-00_inBody-0-1-0-1\" class=\"component style4\">\r\n  <span id=\"z0-00_inBody-0-1-0-1s\" class=\"style4\">William Cohen</span>\r\n </div>\r\n</div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-2\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-2-0\" style=\"float:left;width:99.000%;\">\r\n<div id=\"z0-00_inBody-0-2-0-0\" class=\"component\">\r\n<div style=\"height:0.5em;\" class=\"component\"></div></div>\r\n</div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-3\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-3-0\" style=\"float:left;width:4.950%;\">\r\n <div id=\"z0-00_inBody-0-3-0-0\" style=\"height: 1.5em;\" class=\"component\"></div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-3-1\" style=\"float:left;width:29.700%;\">\r\n <div id=\"z0-00_inBody-0-3-1-0\" class=\"component style4 link clickable\">\r\n  <div id=\"z0-00_inBody-0-3-1-0-img\" tabindex=\"0\"\r\n class=\"style5\"\r\n>\r\n<img src=\"/pub/traxImages/inblue.png\"\r\n             class=\"style6 \"\r\n             name=\"img-inButton\"\r\n             id=\"z0-00_inBody-0-3-1-0-imgI\"\r\n             alt=\"In\"\r\n             title=\"In\">\r\n</div>\r\n </div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-3-2\" style=\"float:left;width:29.700%;\">\r\n <div id=\"z0-00_inBody-0-3-2-0\" class=\"component style4 link clickable\">\r\n  <div id=\"z0-00_inBody-0-3-2-0-img\" tabindex=\"0\"\r\n class=\"style5\"\r\n>\r\n<img src=\"/pub/traxImages/outblack.png\"\r\n             class=\"style6 \"\r\n             name=\"img-outButton\"\r\n             id=\"z0-00_inBody-0-3-2-0-imgI\"\r\n             alt=\"Out\"\r\n             title=\"Out\">\r\n</div>\r\n </div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-3-3\" style=\"float:left;width:29.700%;\">\r\n <div id=\"z0-00_inBody-0-3-3-0\" class=\"component style4 link clickable\">\r\n  <div id=\"z0-00_inBody-0-3-3-0-img\" tabindex=\"0\"\r\n class=\"style5\"\r\n>\r\n<img src=\"/pub/traxImages/notesblack.png\"\r\n             class=\"style6 \"\r\n             name=\"img-noteButton\"\r\n             id=\"z0-00_inBody-0-3-3-0-imgI\"\r\n             alt=\"Note\"\r\n             title=\"Note\">\r\n</div>\r\n </div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-3-4\" style=\"float:left;width:4.950%;\">\r\n <div id=\"z0-00_inBody-0-3-4-0\" style=\"height: 1.5em;\" class=\"component\"></div>\r\n</div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-4\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-4-0\" style=\"float:left;width:99.000%;\">\r\n <div id=\"z0-00_inBody-0-4-0-0\" class=\"component style4\">\r\n  <span id=\"z0-00_inBody-0-4-0-0s\" class=\"style7\">Out for the day, returning Tue Jul 02 2013</span>\r\n </div>\r\n</div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-5\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-5-0\" style=\"float:left;width:99.000%;\">\r\n<div id=\"z0-00_inBody-0-5-0-0\" class=\"component\">\r\n<div style=\"height:0.5em;\" class=\"component\"></div></div>\r\n</div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-6\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-6-0\" style=\"float:left;width:99.000%;\">\r\n<div id=\"z0-00_inBody-0-6-0-0\" class=\"component\">\r\n<table cellspacing=\'0\' class=\"style8\">\r\n <tr>\r\n  <td id=\"z0-00_inBody-0-6-0-0-1-0\" class=\"style9\"><span ><img src=\"/pub/traxImages/atmydesk.PNG\" alt=\"At my desk\" id=\"z0-00_inBody-0-6-0-0-1-0-i0\" class=\"clickable\">\r\n<img src=\"/pub/traxImages/canbephoned.PNG\" alt=\"Can be phoned\" id=\"z0-00_inBody-0-6-0-0-1-0-i1\" class=\"clickable\">\r\n<img src=\"/pub/traxImages/canbepaged.PNG\" alt=\"Can be paged\" id=\"z0-00_inBody-0-6-0-0-1-0-i2\" class=\"clickable\">\r\n</span></td>\r\n </tr>\r\n <tr>\r\n  <td id=\"z0-00_inBody-0-6-0-0-2-0\" class=\"style10\"><span ><img src=\"/pub/traxImages/Enroute.png\" alt=\"En route\" id=\"z0-00_inBody-0-6-0-0-2-0-i0\" class=\"clickable\">\r\n<img src=\"/pub/traxImages/Inameeting.png\" alt=\"In a meeting\" id=\"z0-00_inBody-0-6-0-0-2-0-i1\" class=\"clickable\">\r\n<img src=\"/pub/traxImages/Inthecafe.png\" alt=\"In the cafe\" id=\"z0-00_inBody-0-6-0-0-2-0-i2\" class=\"clickable\">\r\n</span></td>\r\n </tr>\r\n</table></div>\r\n</div>\r\n</div>\r\n<div id=\"z0-00_inBody-0-7\" class=\"row\">\r\n<div id=\"z0-00_inBody-0-7-0\" style=\"float:left;width:99.000%;\">\r\n<div id=\"z0-00_inBody-0-7-0-0\" class=\"component\">\r\n<table cellspacing=\'0\' class=\"style8\">\r\n <tr>\r\n  <td id=\"z0-00_inBody-0-7-0-0-1-0\" class=\"style10\"><span ><img src=\"/pub/traxImages/outside.PNG\" alt=\"Outside\" id=\"z0-00_inBody-0-7-0-0-1-0-i0\" class=\"clickable\">\r\n<img src=\"/pub/traxImages/Unavailable.png\" alt=\"Unavailable\" id=\"z0-00_inBody-0-7-0-0-1-0-i1\" class=\"clickable\">\r\n</span></td>\r\n </tr>\r\n</table></div>\r\n</div>\r\n</div>\r\n</div>\r\n</div>\r\n</div>\r\n</div>\r\n<iframe name=\"HiddenIFrame\" id=\"HiddenIFrame\" title=\"empty\" style=\"display:none;height:0;width:0;border:none;\"></iframe>\r\n<script type=\'text/javascript\'>\n\r// <!--\n\rProcessAjaxResponse(unescape(\"%7Fclearchildregionslist%7F%7F%7Fclearremainderlist%7F%7F%7Fclearrowlist%7F%7F%7Fnewpage%7F%7F%7Fnewpage%7F%7F%7Fupdeventhooks%7Fbody%7F%1B%7B%1B%7Bkeypress%1B%7CKeyEvent%1B%7C%1B%7Bthis%1B%7Cevent%1B%7C0%1B%7D%1B%7D%1B%7D%7Fsetsetfocusbynameurl%7F00002wpl3y%7F%7Fupdeventhooks%7Fz0-00_inBody-0-3-1-0-img%7F%1B%7B%1B%7Bclick%1B%7CImageClicked%1B%7C%5Bevent%2Cthis%2C%27img-inButton%27%2C%27%25link%27%2C1%2Cnull%5D%1B%7C0%1B%7C./1shva5yg00003e9hjb.mthd%1B%7C%1B%7D%1B%7C%1B%7Bkeypress%1B%7CLinkOnKeyPress%1B%7C%5Bthis%2Cevent%5D%1B%7C0%1B%7C%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-3-2-0-img%7F%1B%7B%1B%7Bclick%1B%7CImageClicked%1B%7C%5Bevent%2Cthis%2C%27img-outButton%27%2C%27%25link%27%2C1%2Cnull%5D%1B%7C0%1B%7C./1shva5yg00004bgvdj.mthd%1B%7C%1B%7D%1B%7C%1B%7Bkeypress%1B%7CLinkOnKeyPress%1B%7C%5Bthis%2Cevent%5D%1B%7C0%1B%7C%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-3-3-0-img%7F%1B%7B%1B%7Bclick%1B%7CImageClicked%1B%7C%5Bevent%2Cthis%2C%27img-noteButton%27%2C%27%25link%27%2C1%2Cnull%5D%1B%7C0%1B%7C./1shva5yg00005gioxt.mthd%1B%7C%1B%7D%1B%7C%1B%7Bkeypress%1B%7CLinkOnKeyPress%1B%7C%5Bthis%2Cevent%5D%1B%7C0%1B%7C%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-6-0-0-1-0-i0%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg000069xzkl.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-6-0-0-1-0-i1%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg000072whsw.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-6-0-0-1-0-i2%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg000088msyu.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-6-0-0-2-0-i0%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg00009gg71o.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-6-0-0-2-0-i1%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg0000a14v6y.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-6-0-0-2-0-i2%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg0000b061iq.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-7-0-0-1-0-i0%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg0000clbd1q.mthd%1B%7C%1B%7D%1B%7D%7Fupdeventhooks%7Fz0-00_inBody-0-7-0-0-1-0-i1%7F%1B%7B%1B%7Bclick%1B%7C%1B%7C%1B%7C%1B%7C./1shva5yg0000d731hb.mthd%1B%7C%1B%7D%1B%7D%7Fconstrainimages%7F%7F%7Fsetvalidationglobals%7F%7F%1B%7E%7Fsetvalidationexceptions%7F%7F%1B%7E%7Fsetvalidatordefs%7F%7F%1B%7E%7Faddtoremainderlist%7Fregioncontainer-0%7FV%7C0%7Faddtoremainderlist%7Farrangement-0-0%7FV%7C0%7Fsettimeout%7F1800%7F%7Fsetinitialurl%7F/core-coreWeb.trax.mthr%7F\"));\n\r// -->\n\r</script>\n\r</body>\r\n</html>'
+        info = parseInfo(t,debug=False)
+        pprint.pprint(info)
+        pass
+    def test_unautherized(self):
+        t = '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">\r\n<html>\r\n<head>\r\n\r\n<title>Meditech #Web Signon</title>\r\n<style type="text/css">\r\n   BODY         { background-color: #aaf;\r\n                              font: 9pt arial;}\r\n   .container   { background-color: #eee;\r\n                            border: 2px solid #000;\r\n                             width: 200px;\r\n                            height: 300px;\r\n                       margin-left: 30px;\r\n                      margin-right: 30px;\r\n                        margin-top: 20px;\r\n                     margin-bottom: auto;\r\n                           display:block;\r\n                          position: relative;}\r\n   .headline    {       text-align: center;\r\n                              font: 16pt arial;\r\n                             color: #000;\r\n                        margin-top: 15px; }\r\n   .box         {           margin: 10px;\r\n                           padding: 10px;\r\n                  background-color: #dde;\r\n                            border: 1px solid #bbc; }\r\n   .message     {          padding: 10px;\r\n                       margin-left: 15px;\r\n                      margin-right: 15px;\r\n                             color: #f00; }\r\n   .centeredDiv { margin-right: auto; margin-left: auto; width: 260px;}\r\n</style>\r\n<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>\r\n<META HTTP-EQUIV="Pragma" CONTENT="no-cache">\r\n<script type="text/javascript">\r\n\r\n  var _gaq = _gaq || [];\r\n  _gaq.push([\'_setAccount\', \'UA-22228657-1\']);\r\n  _gaq.push([\'_setDomainName\', \'meditech.com\']);\r\n  _gaq.push([\'_trackPageview\']);\r\n\r\n  (function() {\r\n    var ga = document.createElement(\'script\'); ga.type = \'text/javascript\'; ga.async = true;\r\n    ga.src = (\'https:\' == document.location.protocol ? \'https://ssl\' : \'http://www\') + \'.google-analytics.com/ga.js\';\r\n    var s = document.getElementsByTagName(\'script\')[0]; s.parentNode.insertBefore(ga, s);\r\n  })();\r\n\r\n</script>\r\n\r\n\r\n\r\n\r\n</head>\r\n\r\n<body onload="document.getElementById(\'userid\').focus()">\r\n<div class="centeredDiv">\r\n<div class="container">\r\n  <div class="headline">Trax Mobile</div>\r\n  <div class="box">\r\n    <form action="./signon.mthz" method="post" autocomplete="on" name="signinForm">\r\n      <input type="hidden" name="sourl" value="&#47;core-coreWeb.trax.mthr">\r\n      <input type="hidden" name="application" value="">\r\n      <div  style="text-align:center;">\r\n        <label>User Name:</label>\r\n        <div><input id="userid" autocapitalize="off" type="text" name="userid" size=15><br></div>\r\n        <br>\r\n        <label>Password:</label>\r\n        <div><input type="password" id="password" name="password" size=15><br></div>\r\n        \r\n        <br>\r\n        <div><input value="Sign In" type="submit"></div>\r\n      </div>\r\n    </form>\r\n<div class="message" id="message">Invalid username/password, try again.</div>\r\n\r\n  </div>\r\n\r\n\r\n</div>\r\n</div>\r\n<script type="text/javascript">\r\n$(document).ready(function (){document.getElementById(\'userid\').focus();\r\n                              setTimeout(function(){autoSub()},1000);});\r\n\r\nfunction autoSub()\r\n{\r\n\tvar t= $("#message").html();\r\n\tvar d = document.getElementById("userid");\r\n    \tvar p = document.getElementById("password");\r\n\tif (t!=="Invalid username/password, try again." && t!=="Missing field(s), try again." && d.value!== "" && p.value !== "") \r\n\t  {setTimeout("document.signinForm.submit();",100);}\r\n}\r\n</script>\r\n\r\n</body>\r\n</html>'
+        info = parseInfo(t,debug=True)
+        pprint.pprint(info)
+        pass
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
-    '''
+    full_suite = unittest.TestSuite()
+    full_suite.addTests([Test('test_landing'),
+                         Test('test_unautherized')])
+    #unittest.TextTestRunner().run(full_suite)
+    #
     
-    t = '<html>\r\n<head>\r\n<title>Mobile Trax</title>\r\n<script type="text/javascript" src="./system/scripts/main.js"></script>\r\n<script type="text/javascript">\r\n<!--\r\n  window.onbeforeunload = confirmExit;\r\n//-->\r\n</script>\r\n<style type="text/css">\r\n.block {float:left;}\r\n.component {position:relative;\r\n            font-family:Verdana,Helvetica,Ariel,sans-serif;}\r\n.clickable {cursor:pointer;}\r\n.cell-component {font-family:Verdana,Helvetica,Ariel,sans-serif}\r\n.popupcalendarlink {cursor:default;\r\n                    border-color:#000;\r\n                    text-align:center; font-weight: 700;\r\n                    color: blue;}\r\n.popupcalendarheader { background: #ddf; }\r\n.popupcalendarhover { background: #ddf; }\r\nbody { margin:0; padding:0; }\r\n@media screen {\r\n .regioncontainer {\r\n    width:100%; height:100%;\r\n    top:0; left:0;\r\n    position:absolute;\r\n    padding:0; margin:0;\r\n    overflow:hidden;\r\n }\r\n}\r\n@media print {\r\n .regioncontainer {\r\n    top:0; left:0;\r\n    padding:0; margin:0;\r\n    overflow:hidden;\r\n }\r\n}\r\n.sysnormaltext {color:black; font-style:normal;}\r\n.sysoverridegraytext {color:gray; font-style:italic;}\r\n.sysoverridegraytextselect {color:gray;}\r\ndiv.link {cursor:pointer;}\r\ndiv.popupshield {width:100%; height:100%;\r\n                 background:#000;\r\n                 position:absolute; margin:0; border:none; padding:0; top:0; left:0;\r\n                 opacity:0.2; filter:alpha(opacity=20);}\r\ndiv.popupshield2 {width:100%; height:100%;\r\n                  background:#000;\r\n                  position:absolute; margin:0; border:none; padding:0; top:0; left:0;\r\n                  opacity:0.0; filter:alpha(opacity=0);}\r\ndiv.popupouter {position:absolute; height:auto;\r\n                border:1px solid black;\r\n                background:white;}\r\ndiv.popupheader {background:#4040e0; color:white;\r\n                 margin:0; padding:2px;}\r\ndiv.popupbody {margin:0; padding:5px;}\r\nimg.link {cursor:pointer;}\r\n.style0 {height:100%; left:0; margin:0; padding:0; position:absolute; top:0%; width:100%;}\r\n.style1 {border-top:1px solid #000000; border-right:1px solid #000000; border-bottom:1px solid #000000; height:100%; left:0; margin:0; overflow:auto; padding:0; position:absolute; top:0; width:100%;}\r\n.style2 {float:left; width:100%;}\r\n.style3 {text-align:center;}\r\n.style4 {width:auto;}\r\n.style5 {margin:auto; display:block;}\r\n.style6 {font-size:x-small; font-family:verdana;}\r\n.style7 {margin:auto;}\r\n.style8 {border-left:none; border-right:none; border-top:none;}\r\n.style9 {border-bottom:none; border-left:none; border-right:none; border-top:none;}\r\n</style>\r\n</head>\r\n<body onload=\'BodyOnLoad();\' onkeypress=\'KeyEvent(this,event);\'>\r\n<div><a tabindex="0" href=""></a></div>\r\n<div><a tabindex="0" href=""></a></div>\r\n<div id="regioncontainer-0" class="regioncontainer">\r\n<div id="body-0-wrapper" class="style0">\r\n<div id="body-0" class="style1">\r\n<div class="style2"><div>\r\n\r\n<div id="z0-b-0-1-0" class="block" style="width:96.0000%;clear:both;">\r\n<div id="z0-b-0-1-0-0" class="component">\r\n<style type="text/css">@media screen and (min-width: 320px) {img.clickable {width:90px;height:81px;}img.style5 {width:90px;height:45px;}}@media screen and (min-width: 360px) {img.clickable {width:110px;height:99px;}img.style5 {width:108px;height:54px;}}@media screen and (min-width: 640px) {img.clickable {width:130px;height:117px;}img.style5 {width:130px;height:65px;}}@media screen and (min-width: 800px) {img.clickable {width:150px;height:135px;}img.style5 {width:150px;height:75px;}}@media screen and (min-width: 960px) {img.clickable {width:170px;height:153px;}img.style5 {width:170px;height:85px;}}@media screen and (min-width: 1120px) {img.clickable {width:190px;height:171px;}img.style5 {width:190px;height:95px;}}</style></div>\r\n <div class="component style3">\r\n  <span id="z0-b-0-1-0-1s">William Cohen </span>\r\n</div>\r\n</div>\r\n\r\n</div>\r\n<div>\r\n\r\n<div id="z0-b-0-2-0" class="block" style="width:96.0000%;clear:both;">\r\n<div id="z0-b-0-2-0-0" class="component">\r\n<div style="height:0.5em;" class="component"></div></div>\r\n</div>\r\n\r\n</div>\r\n<div>\r\n\r\n<div id="z0-b-0-3-0" class="block" style="width:4.8000%;clear:both;">\r\n <div style="height: 1.5em;" class="component"></div>\r\n</div>\r\n\r\n<div id="z0-b-0-3-1" class="block" style="width:28.8000%;">\r\n <div id="z0-b-0-3-1-0" class="component link clickable">\r\n  <div id="z0-b-0-3-1-0-img" tabindex="0"\r\n class="style4"\r\n onclick=\'javascript:LinkClicked("./4rg00005zm6nq.mthd",1);\'\r\n onkeypress=\'LinkOnKeyPress(this,event);\'\r\n><img src="/pub/traxImages/inblue.png"\r\n             class="style5"\r\n             name="inButton"\r\n             id="z0-b-0-3-1-0-imgI"\r\n             alt="In"\r\n             width="60px"\r\n             height="30px"\r\n             title="In">\r\n</div>\r\n </div>\r\n</div>\r\n\r\n<div id="z0-b-0-3-2" class="block" style="width:28.8000%;">\r\n <div id="z0-b-0-3-2-0" class="component link clickable">\r\n  <div id="z0-b-0-3-2-0-img" tabindex="0"\r\n class="style4"\r\n onclick=\'javascript:LinkClicked("./4rg00006n9id1.mthd",1);\'\r\n onkeypress=\'LinkOnKeyPress(this,event);\'\r\n><img src="/pub/traxImages/outblack.png"\r\n             class="style5"\r\n             name="outButton"\r\n             id="z0-b-0-3-2-0-imgI"\r\n             alt="Out"\r\n             width="60px"\r\n             height="30px"\r\n             title="Out">\r\n</div>\r\n </div>\r\n</div>\r\n\r\n<div id="z0-b-0-3-3" class="block" style="width:28.8000%;">\r\n <div id="z0-b-0-3-3-0" class="component link clickable">\r\n  <div id="z0-b-0-3-3-0-img" tabindex="0"\r\n class="style4"\r\n onclick=\'javascript:LinkClicked("./4rg000072jseh.mthd",1);\'\r\n onkeypress=\'LinkOnKeyPress(this,event);\'\r\n><img src="/pub/traxImages/notesblack.png"\r\n             class="style5"\r\n             name="noteButton"\r\n             id="z0-b-0-3-3-0-imgI"\r\n             alt="Note"\r\n             width="60px"\r\n             height="30px"\r\n             title="Note">\r\n</div>\r\n </div>\r\n</div>\r\n\r\n<div id="z0-b-0-3-4" class="block" style="width:4.8000%;">\r\n <div style="height: 1.5em;" class="component"></div>\r\n</div>\r\n\r\n</div>\r\n<div>\r\n\r\n<div id="z0-b-0-4-0" class="block" style="width:96.0000%;clear:both;">\r\n <div class="component style3">\r\n  <span id="z0-b-0-4-0-0s" class="style6">Out for the day, returning Mon 02/11/13 </span>\r\n</div>\r\n</div>\r\n\r\n</div>\r\n<div>\r\n\r\n<div id="z0-b-0-5-0" class="block" style="width:96.0000%;clear:both;">\r\n<div id="z0-b-0-5-0-0" class="component">\r\n<div style="height:0.5em;" class="component"></div></div>\r\n</div>\r\n\r\n</div>\r\n<div>\r\n\r\n<div id="z0-b-0-6-0" class="block" style="width:96.0000%;clear:both;">\r\n<div id="z0-b-0-6-0-0" class="component">\r\n<table cellspacing=\'0\' class="style7">\r\n <tr>\r\n  <td id="z0-b-0-6-0-0-1-0" class="style8"><span><img src="/pub/traxImages/atmydesk.PNG" alt="At my desk" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg00008zt73j.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/canbephoned.PNG" alt="Can be phoned" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg00009c024j.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/canbepaged.PNG" alt="Can be paged" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg0000ac7i77.mthd",1);\' class="clickable">\r\n</span></td>\r\n </tr>\r\n <tr>\r\n  <td id="z0-b-0-6-0-0-2-0" class="style9"><span><img src="/pub/traxImages/Enroute.png" alt="En route" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg0000b2h7m2.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Inameeting.png" alt="In a meeting" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg0000cqpuum.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Inthecafe.png" alt="In the cafe" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg0000d97uhw.mthd",1);\' class="clickable">\r\n</span></td>\r\n </tr>\r\n</table></div>\r\n</div>\r\n\r\n</div>\r\n<div>\r\n\r\n<div id="z0-b-0-7-0" class="block" style="width:96.0000%;clear:both;">\r\n<div id="z0-b-0-7-0-0" class="component">\r\n<table cellspacing=\'0\' class="style7">\r\n <tr>\r\n  <td id="z0-b-0-7-0-0-1-0" class="style9"><span><img src="/pub/traxImages/outside.PNG" alt="Outside" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg0000eiola4.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Unavailable.png" alt="Unavailable" width="60" height="60" onclick=\'javascript:LinkClicked("./4rg0000fwr30r.mthd",1);\' class="clickable">\r\n</span></td>\r\n </tr>\r\n</table></div>\r\n</div>\r\n\r\n</div>\r\n</div></div>\r\n</div>\r\n</div>\r\n<iframe name="HiddenIFrame" id="HiddenIFrame" style="display:none;height:0;width:0;border:none;"></iframe>\r\n<script type=\'text/javascript\'>\n\r// <!--\n\rProcessAjaxResponse(unescape("%7fnewpage%7f%7f%7fnewpage%7f%7f%7fsetfocus%7fz0-b-0-3-1-0-img%7f%7fsendkeymap%7fshift+tab%7f./4rg00002ufs0f.mthd%7fsendkeymap%7ftab%7f./4rg00003dnu1q.mthd%7fsetsetfocusbynameurl%7f00004730c2%7f%7fsettimeout%7f600%7f%7fsetinitialurl%7f/core-coreWeb.trax.mthr%7f"));\n\r// -->\n\r</script>\n\r</body>\r\n</html>'
-    info = parseInfo(t)
-    print(info)
-    t = '<div class="style2"><div>\\r\\n\\r\\n<div id="z0-b-0-1-0" class="block" style="width:96.0000%;clear:both;">\\r\\n<div id="z0-b-0-1-0-0" class="component">\\r\\n<style type="text/css"> table {width:100%;}</style></div>\\r\\n<div id="z0-b-0-1-0-1" class="component">\\r\\n<style type="text/css">@media screen and (min-width: 320px) {img.clickable {width:90px;height:81px;}img.style5 {width:90px;height:45px;}}@media screen and (min-width: 360px) {img.clickable {width:110px;height:99px;}img.style5 {width:108px;height:54px;}}@media screen and (min-width: 640px) {img.clickable {width:130px;height:117px;}img.style5 {width:130px;height:65px;}}@media screen and (min-width: 800px) {img.clickable {width:150px;height:135px;}img.style5 {width:150px;height:75px;}}@media screen and (min-width: 960px) {img.clickable {width:170px;height:153px;}img.style5 {width:170px;height:85px;}}@media screen and (min-width: 1120px) {img.clickable {width:190px;height:171px;}img.style5 {width:190px;height:95px;}}</style></div>\\r\\n <div class="component style3">\\r\\n  <span id="z0-b-0-1-0-2s">William Cohen </span>\\r\\n</div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-2-0" class="block" style="width:96.0000%;clear:both;">\\r\\n<div id="z0-b-0-2-0-0" class="component">\\r\\n<div style="height:0.5em;" class="component"></div></div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-3-0" class="block" style="width:4.8000%;clear:both;">\\r\\n <div style="height: 1.5em;" class="component"></div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-3-1" class="block" style="width:28.8000%;">\\r\\n <div id="z0-b-0-3-1-0" class="component link clickable">\\r\\n  <div id="z0-b-0-3-1-0-img" tabindex="0"\\r\\n class="style4"\\r\\n onclick=\\\'javascript:LinkClicked("./50y0000iuume8.mthd",1);\\\'\\r\\n onkeypress=\\\'LinkOnKeyPress(this,event);\\\'\\r\\n><img src="/pub/traxImages/inblack.png"\\r\\n             class="style5"\\r\\n             name="inButton"\\r\\n             id="z0-b-0-3-1-0-imgI"\\r\\n             alt="In"\\r\\n             width="60px"\\r\\n             height="30px"\\r\\n             title="In">\\r\\n</div>\\r\\n </div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-3-2" class="block" style="width:28.8000%;">\\r\\n <div id="z0-b-0-3-2-0" class="component link clickable">\\r\\n  <div id="z0-b-0-3-2-0-img" tabindex="0"\\r\\n class="style4"\\r\\n onclick=\\\'javascript:LinkClicked("./50y0000ju10r8.mthd",1);\\\'\\r\\n onkeypress=\\\'LinkOnKeyPress(this,event);\\\'\\r\\n><img src="/pub/traxImages/outblack.png"\\r\\n             class="style5"\\r\\n             name="outButton"\\r\\n             id="z0-b-0-3-2-0-imgI"\\r\\n             alt="Out"\\r\\n             width="60px"\\r\\n             height="30px"\\r\\n             title="Out">\\r\\n</div>\\r\\n </div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-3-3" class="block" style="width:28.8000%;">\\r\\n <div id="z0-b-0-3-3-0" class="component link clickable">\\r\\n  <div id="z0-b-0-3-3-0-img" tabindex="0"\\r\\n class="style4"\\r\\n onclick=\\\'javascript:LinkClicked("./50y0000kxloln.mthd",1);\\\'\\r\\n onkeypress=\\\'LinkOnKeyPress(this,event);\\\'\\r\\n><img src="/pub/traxImages/notesblue.png"\\r\\n             class="style5"\\r\\n             name="noteButton"\\r\\n             id="z0-b-0-3-3-0-imgI"\\r\\n             alt="Note"\\r\\n             width="60px"\\r\\n             height="30px"\\r\\n             title="Note">\\r\\n</div>\\r\\n </div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-3-4" class="block" style="width:4.8000%;">\\r\\n <div style="height: 1.5em;" class="component"></div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-4-0" class="block" style="width:96.0000%;clear:both;">\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-5-0" class="block" style="width:96.0000%;clear:both;">\\r\\n<div id="z0-b-0-5-0-0" class="component">\\r\\n<div style="height:0.5em;" class="component"></div></div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-6-0" class="block" style="width:1.9200%;clear:both;">\\r\\n <div style="height: 1.5em;" class="component"></div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-6-1" class="block" style="width:94.0800%;">\\r\\n<div id="z0-b-0-6-1-0" class="component style3">\\r\\n</div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-7-0" class="block" style="width:96.0000%;clear:both;">\\r\\n<div id="z0-b-0-7-0-0" class="component">\\r\\n<div style="height:0.5em;" class="component"></div></div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n<div>\\r\\n\\r\\n<div id="z0-b-0-8-0" class="block" style="width:31.6800%;clear:both;">\\r\\n <div style="height: 1.5em;" class="component"></div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-8-1" class="block" style="width:31.6800%;">\\r\\n <div id="z0-b-0-8-1-0" class="component link clickable">\\r\\n  <div id="z0-b-0-8-1-0-img" tabindex="0"\\r\\n class="style4"\\r\\n onclick=\\\'javascript:LinkClicked("./50y0000ljhsz3.mthd",1);\\\'\\r\\n onkeypress=\\\'LinkOnKeyPress(this,event);\\\'\\r\\n><img src="/pub/traxImages/saveblack.png"\\r\\n             class="style5"\\r\\n             name="saveButton"\\r\\n             id="z0-b-0-8-1-0-imgI"\\r\\n             alt="Save"\\r\\n             width="60px"\\r\\n             height="30px"\\r\\n             title="Save">\\r\\n</div>\\r\\n </div>\\r\\n</div>\\r\\n\\r\\n<div id="z0-b-0-8-2" class="block" style="width:31.6800%;">\\r\\n <div style="height: 1.5em;" class="component"></div>\\r\\n</div>\\r\\n\\r\\n</div>\\r\\n</div>\\x7fupdclass\\x7fbody-0\\x7fstyle1\\x7fupdstyle\\x7fbody-0\\x7f\\x7fnewpage\\x7f\\x7f\\x7fnewrichtext\\x7fz0-b-0-6-1-0|in1|\\x7f\\r<font size="2"><span style="font-family:Verdana; color:rgb(0,0,0);"><br>cell - 617 538 9088<br><br>When unavailable urgent issues to:<br>Amy Bacon&nbsp; X3247<br>Travis BeebeX5090<br>Neil Vigliotta X5043<br>Dave NadeauX3248<br><br></span></font>\\x7fresetkeymap\\x7f\\x7f\\x7fsendkeymap\\x7fshift+tab\\x7f./50y0000gvk09d.mthd\\x7fsendkeymap\\x7ftab\\x7f./50y0000hbkxmg.mthd\\x7fsetfocus\\x7fz0-b-0-3-1-0-img\\x7f\''
-    info = parseInfo(t)
-    print(info)
-    '''
-    #out
-    t = 'b\'\x7fupd\x7fz0-b-0-3-1\x7f\r\n <div id="z0-b-0-3-1-0" class="component link clickable">\r\n  <div id="z0-b-0-3-1-0-img" tabindex="0"\r\n class="style4"\r\n onclick=\'javascript:LinkClicked("./ce50000islnun.mthd",1);\'\r\n onkeypress=\'LinkOnKeyPress(this,event);\'\r\n><img src="/pub/traxImages/inblack.png"\r\n             class="style5"\r\n             name="inButton"\r\n             id="z0-b-0-3-1-0-imgI"\r\n             alt="In"\r\n             width="60px"\r\n             height="30px"\r\n             title="In">\r\n</div>\r\n </div>\r\n\x7fupdclass\x7fz0-b-0-3-1\x7fblock\x7fupdstyle\x7fz0-b-0-3-1\x7fwidth:28.8000%;\x7fupd\x7fz0-b-0-3-2\x7f\r\n <div id="z0-b-0-3-2-0" class="component link clickable">\r\n  <div id="z0-b-0-3-2-0-img" tabindex="0"\r\n class="style4"\r\n onclick=\'javascript:LinkClicked("./ce50000jwf5ml.mthd",1);\'\r\n onkeypress=\'LinkOnKeyPress(this,event);\'\r\n><img src="/pub/traxImages/outblue.png"\r\n             class="style5"\r\n             name="outButton"\r\n             id="z0-b-0-3-2-0-imgI"\r\n             alt="Out"\r\n             width="60px"\r\n             height="30px"\r\n             title="Out">\r\n</div>\r\n </div>\r\n\x7fupdclass\x7fz0-b-0-3-2\x7fblock\x7fupdstyle\x7fz0-b-0-3-2\x7fwidth:28.8000%;\x7fupd\x7fz0-b-0-6-0\x7f\r\n<div id="z0-b-0-6-0-0" class="component">\r\n<table cellspacing=\'0\' class="style7">\r\n <tr>\r\n  <td id="z0-b-0-6-0-0-1-0" class="style8"><span><img src="/pub/traxImages/Outfortheday.png" alt="Out for the day" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000kdgva9.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Outsick.png" alt="Out sick" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000liidew.mthd",1);\' class="clickable">\r\n</span></td>\r\n </tr>\r\n <tr>\r\n  <td id="z0-b-0-6-0-0-2-0" class="style9"><span><img src="/pub/traxImages/Outonvacation.png" alt="Out on vacation" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000matbvj.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Outonleave.png" alt="Out on leave" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000n5gwff.mthd",1);\' class="clickable">\r\n</span></td>\r\n </tr>\r\n</table></div>\r\n\x7fupdclass\x7fz0-b-0-6-0\x7fblock\x7fupdstyle\x7fz0-b-0-6-0\x7fwidth:96.0000%;clear:both;\x7fupd\x7fz0-b-0-7-0\x7f\r\n<div id="z0-b-0-7-0-0" class="component">\r\n<table cellspacing=\'0\' class="style7">\r\n <tr>\r\n  <td id="z0-b-0-7-0-0-1-0" class="style9"><span><img src="/pub/traxImages/Backin12hour.png" alt="Back in 1/2 hour" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000oamehm.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Backin1hour.png" alt="Back in 1 hour" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000ph14bt.mthd",1);\' class="clickable">\r\n<img src="/pub/traxImages/Backinawhile.png" alt="Back in a while" width="60" height="60" onclick=\'javascript:LinkClicked("./ce50000q2y9yz.mthd",1);\' class="clickable">\r\n</span></td>\r\n </tr>\r\n</table></div>\r\n\x7fupdclass\x7fz0-b-0-7-0\x7fblock\x7fupdstyle\x7fz0-b-0-7-0\x7fwidth:96.0000%;clear:both;\x7fnewpage\x7f\x7f\x7fresetkeymap\x7f\x7f\x7fsendkeymap\x7fshift+tab\x7f./ce50000gxerw7.mthd\x7fsendkeymap\x7ftab\x7f./ce50000hv4f7g.mthd\x7fsetfocus\x7fz0-b-0-3-1-0-img\x7f'
-    info = parseInfo(t)
-    print(info)
-    
-    t = '<div id="z0-00_noteBody-0-8-2" style="float:left;width:33%;"> <div style="height: 1.5em;" class="component"></div></div></div></div></div></div>updclassregioncontainer-0regioncontainer style0newpagenewrichtextz0-00_noteBody-0-6-1-0|in1|cbrte|p<font size="2"><span style="font-family:Verdana; color:rgb(0,0,0);">Retrofitting all day<br><br>Urgent issues to Amy Bacon x3247<br><br><br>cell - 617 538 9088<br><br>When unavailable urgent issues to:<br>Amy Bacon X3247<br>Travis BeebeX5090<br>Neil Vigliotta X5043<br>Dave NadeauX3248<br></span></font>resetkeymapsendkeymapshift+tab./j1gjxhyv0000gawj9w.mthdsendkeymaptab./j1gjxhyv0000hgs03a.mthdaddtoremainderlistregioncontainer-0V|0addtoremainderlistarrangement-0-0V|0addtorowlistz0-00_noteBody-0-1addtorowlistz0-00_noteBody-0-2addtorowlistz0-00_noteBody-0-3addtorowlistz0-00_noteBody-0-4addtorowlistz0-00_noteBody-0-5addtorowlistz0-00_noteBody-0-6addtorowlistz0-00_noteBody-0-7addtorowlistz0-00_noteBody-0-8setfocusz0-00_noteBody-0-3-1-0-img'
-    info = parseInfo(t)
-    print(info)
-    '''
-    t='<div id="z0-00_outBody-0-4-0" style="float:left;width:99%;">\r\n <div class="component style4">\r\n  <span id="z0-00_outBody-0-4-0-0s" class="style7">Out on vacation, returning Tue 03&#47;26&#47;13</span>\r\n </div>\r\n</div>\r\n</div>\r\n<div class="row" id="z0-00_outBody-0-5">'
-    info = parseInfo(t,debug=True)
-    '''
-    
-    
-    #can be phoned
-    t = '<html></head><body onload="BodyOnLoad();" onkeypress="KeyEvent(this,event);" style=""><div><a tabindex="0" href=""></a></div><div><a abindex="0" href=""></a></div><div id="regioncontainer-0" class="regioncontainer style0"><div id="arrangement-0-0" class="style1"><div id="z0-00summaryBody" class="style2"><div class="style3"><div class="row" id="z0-00_summaryBody-0-1"><div id="z0-00_summaryBody-0-1-0" tyle="float:left;width:99%;"><div id="z0-00_summaryBody-0-1-0-0" class="component"><style type="text/css">@media screen and (min-width: 320px) img.clickable {width:90px;height:81px;}img.style6 {width:90px;height:45px;}}@media screen and (min-width: 360px) {img.clickable width:110px;height:99px;}img.style6 {width:108px;height:54px;}}@media screen and (min-width: 640px) {img.clickable {width:130px;height:117px;}mg.style6 {width:130px;height:65px;}}@media screen and (min-width: 800px) {img.clickable {width:150px;height:135px;}img.style6 width:150px;height:75px;}}@media screen and (min-width: 960px) {img.clickable {width:170px;height:153px;}img.style6 {width:170px;height:85px;}}media screen and (min-width: 1120px) {img.clickable {width:190px;height:171px;}img.style6 {width:190px;height:95px;}}</style></div> <div lass="component style4">  <span id="z0-00_summaryBody-0-1-0-1s">William Cohen</span> </div></div></div><div class="row" id="z0-00summaryBody-0-2"><div id="z0-00_summaryBody-0-2-0" style="float:left;width:99%;"><div id="z0-00_summaryBody-0-2-0-0" class="component"><div style="height:0.5em;" class="component"></div></div></div></div><div class="row" id="z0-00_summaryBody-0-3"><div id="z0-00_summaryBody-0-3-0" style="float:left;width:5%;"> <div style="height: 1.5em;" class="component"></div></div><div id="z0-00_summaryBody-0-3-1" tyle="float:left;width:30%;"> <div id="z0-00_summaryBody-0-3-1-0" class="component link clickable">  <div id="z0-00_summaryBody-0-3-1-0-img" abindex="0" class="style5" onclick="javascript:ImageClicked(event,this,&quot;img-inButton&quot;,&quot;./dgilqsft00011qtmst.mthd&quot;,1);" nkeypress="LinkOnKeyPress(this,event);"><img src="/pub/traxImages/inblue.png" class="style6" name="img-inButton" id="z0-00_summaryBody-0-3-1--imgI" alt="In" width="60px" height="30px" title="In"></div> </div></div><div id="z0-00_summaryBody-0-3-2" style="float:left;width:30%;"> <div d="z0-00_summaryBody-0-3-2-0" class="component link clickable">  <div id="z0-00_summaryBody-0-3-2-0-img" tabindex="0" class="style5" nclick="javascript:ImageClicked(event,this,&quot;img-outButton&quot;,&quot;./dgilqsft00012mjg4l.mthd&quot;,1);" onkeypress="LinkOnKeyPressthis,event);"><img src="/pub/traxImages/outblack.png" class="style6" name="img-outButton" id="z0-00_summaryBody-0--2-0-imgI" alt="Out" width="60px" height="30px" title="Out"></div> </div></div><div id="z0-00_summaryBody-0-3-3" style="float:left;width:30%;"> div id="z0-00_summaryBody-0-3-3-0" class="component link clickable">  <div id="z0-00_summaryBody-0-3-3-0-img" tabindex="0" class="style5" nclick="javascript:ImageClicked(event,this,&quot;img-noteButton&quot;,&quot;./dgilqsft00013ilwlg.mthd&quot;,1);" onkeypress="LinkOnKeyPressthis,event);"><img src="/pub/traxImages/notesblack.png" class="style6" name="img-noteButton" id="z0-00summaryBody-0-3-3-0-imgI" alt="Note" width="60px" height="30px" title="Note"></div> </div></div><div id="z0-00_summaryBody-0-3-4" tyle="float:left;width:5%;"> <div style="height: 1.5em;" class="component"></div></div></div><div class="row" id="z0-00_summaryBody-0-4"><div d="z0-00_summaryBody-0-4-0" style="float:left;width:99%;"> <div style="height: 3.0em;" class="component"></div></div></div><div class="row" d="z0-0_summaryBody-0-5"><div id="z0-00_summaryBody-0-5-0" style="float:left;width:99%;"></div></div><div class="row" id="z0-00_summaryBody-0-6"><div id="z0-00_summaryBody-0-6-0" style="float:left;width:99%;"> <div class="component style4">  <span id="z0-00_summaryBody-0-6-0-0s" lass="style11">Status will be:</span> </div> <div class="component style4">  <span id="z0-00_summaryBody-0-6-0-1s" class="style11">Can be phoned, ramingham</span> </div><div class="component"><table cellspacing="0" class="style12"><colgroup><col style="width:auto"></colgroup><tbody><tr><td class="style13"><div class="cell-component"><input id="z0-00_summaryBody-0-6-0-2_0i" type="text" spellcheck="false" style="width: 20ex" lass="style14" name="in1" onclick="javascript:LinkClicked(&quot;./dgilqsft00014na003.mthd&quot;,1);" onchange="javascript:           LinkClicked&quot;./dgilqsft000154a0qj.mthd&quot;           ,1);"></div></td></tr></tbody></table></div></div></div><div class="row" id="z0-00summaryBody-0-7"><div id="z0-00_summaryBody-0-7-0" style="float:left;width:99%;"> <div style="height: 4.5em;" class="component"></div></div></div><div class="row" id="z0-00_summaryBody-0-8"><div id="z0-00_summaryBody-0-8-0" style="float:left;width:33%;"> <div style="height: 1.5em;" lass="component"></div></div><div id="z0-00_summaryBody-0-8-1" style="float:left;width:33%;"> <div id="z0-00_summaryBody-0-8-1-0" lass="component link clickable">  <div id="z0-00_summaryBody-0-8-1-0-img" tabindex="0" class="style5" onclick="javascript:ImageClicked(event,this,quot;img-saveButton&quot;,&quot;./dgilqsft000163clny.mthd&quot;,1);" onkeypress="LinkOnKeyPress(this,event);"><img rc="/pub/traxImages/saveblack.png" class="style6" name="img-saveButton" id="z0-00_summaryBody-0-8-1-0-imgI" alt="Save" width="60px" eight="30px" title="Save"></div> </div></div><div id="z0-00_summaryBody-0-8-2" style="float:left;width:33%;"> <div style="height: 1.5em;" lass="component"></div></div></div></div></div></div></div><iframe name="HiddenIFrame" id="HiddenIFrame" title="empty" tyle="display:none;height:0;width:0;border:none;"></iframe><script type="text/javascript">// <!--ProcessAjaxResponse(unescape("%7fnewpage%7f%f%7fnewpage%7f%7f%7fclearchildregionslist%7f%7f%7fclearremainderlist%7f%7f%7fclearrowlist%7f%7f%7faddtoremainderlist%7fregioncontainer-%fV%7c0%7faddtoremainderlist%7farrangement-0-0%7fV%7c0%7faddtorowlist%7fz0-00_inBody-0-1%7f%7faddtorowlist%7fz0-00_inBody-0-2%7f%faddtorowlist%7fz0-00_inBody-0-3%7f%7faddtorowlist%7fz0-00_inBody-0-4%7f%7faddtorowlist%7fz0-00_inBody-0-5%7f%7faddtorowlist%7fz0-00inBody-0-6%7f%7faddtorowlist%7fz0-00_inBody-0-7%7f%7fsetfocus%7fz0-00_inBody-0-3-1-0-img%7f%7fsendkeymap%7fshift+tab%f./dgilqsft00002y5l28.mthd%7fsendkeymap%7ftab%7f./dgilqsft00003hpbhk.mthd%7fsetsetfocusbynameurl%7f00004gbj9m%7f%7fsettimeout%7f600%f%7fsetinitialurl%7f/core-coreWeb.trax.mthr%7f"));// --></script></body></html>'
-    info = parseInfo(t,debug=False)
-    print(info)
-    #date select
-    t = '<div class="row" id="z0-00_dateBody-0-6"><div id="z0-00_dateBody-0-6-0" style="float:left;width:99%;"><div class="component style4"><select id="z0-00_dateBody-0-6-0-0s" class="component" size="1" name="in1" onclick=\'javascript:LinkClicked("./dgo4348x0000xjuy2g.mthd",1);\' onchange=\'javascript:LinkClicked("./dgo4348x0000y26702.mthd",1);\'><option value="20130416" class="">Tue Apr 16, 2013</option><option value="20130417" selected="" class="">Wed Apr 17, 2013</option><option value="20130418" class="">Thu Apr 18, 2013</option><option alue="20130419" class="">Fri Apr 19, 2013</option><option value="20130420" class="">Sat Apr 20, 2013</option><option value="20130421" class="">Sun pr 21, 2013</option><option value="20130422" class="">Mon Apr 22, 2013</option><option value="20130423" class="">Tue Apr 23, 2013</option><option value="20130424" class="">Wed Apr 24, 2013</option><option value="20130425" class="">Thu Apr 25, 2013</option><option value="20130426" lass="">Fri Apr 26, 2013</option><option value="20130427" class="">Sat Apr 27, 2013</option><option value="20130428" class="">Sun Apr 28, 2013/option><option value="20130429" class="">Mon Apr 29, 2013</option><option value="20130430" class="">Tue Apr 30, 2013</option><option alue="20130501" class="">Wed May 01, 2013</option><option value="20130502" class="">Thu May 02, 2013</option><option value="20130503" class="">ri May 03, 2013</option><option value="20130504" class="">Sat May 04, 2013</option><option value="20130505" class="">Sun May 05, 2013</option><option value="20130506" class="">Mon May 06, 2013</option><option value="20130507" class="">Tue May 07, 2013</option><option value="20130508" lass="">Wed May 08, 2013</option><option value="20130509" class="">Thu May 09, 2013</option><option value="20130510" class="">Fri May 10, 2013/option><option value="20130511" class="">Sat May 11, 2013</option><option value="20130512" class="">Sun May 12, 2013</option><option alue="20130513" class="">Mon May 13, 2013</option><option value="20130514" class="">Tue May 14, 2013</option><option value="20130515" class="">ed May 15, 2013</option><option value="20130516" class="">Thu May 16, 2013</option><option value="20130517" class="">Fri May 17, 2013</option></select></div></div></div>'
-    info = parseInfo(t,debug=False)
-    print(info)
+    sub_suite = unittest.TestSuite()
+    sub_suite.addTest(Test('test_unautherized'))
+    unittest.TextTestRunner().run(sub_suite)
+    import trax
+    try:
+        raise trax.UnautherizedError('poop','adoop')
+    except trax.UnautherizedError, e:
+        
+        print e.message
